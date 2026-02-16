@@ -1,2 +1,2 @@
-# Python_JointDevelopment
-Repository of ASVK joint development python course by George Kouryachy CMC MSU
+# Prac_6
+Repository of ASVK practice spring CMC MSU supporting Python Joint Development lecture course
