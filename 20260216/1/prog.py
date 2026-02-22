@@ -83,3 +83,14 @@ sys.stdout.write(body.decode("utf-8", errors="replace"))
 tree_sha, _ = commit_tree_parent(body)
 print_tree(tree_sha)
 
+cur = last
+while True:
+    _, cbody = read_obj(cur)
+    tree_sha, parent = commit_tree_parent(cbody)
+
+    print(f"TREE for commit {cur}")
+    print_tree(tree_sha)
+
+    if not parent:
+        break
+    cur = parent
