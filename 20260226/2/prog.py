@@ -4,13 +4,13 @@ W = 10
 H = 10
 
 x, y = 0, 0
-monsters = {} 
+monsters = {}
 
 def encounter(x, y):
     m = monsters.get((x, y))
     if m is not None:
         name, hello = m
-        print(cowsay.cowsay(hello))
+        print(cowsay.cowsay(hello, cow=name))
 
 
 while inp := input().split():
