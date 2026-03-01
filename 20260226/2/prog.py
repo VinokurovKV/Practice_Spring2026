@@ -4,11 +4,12 @@ W = 10
 H = 10
 
 x, y = 0, 0
-monsters = {}
+monsters = {} 
 
 def encounter(x, y):
-    hello = monsters.get((x, y))
-    if hello is not None:
+    m = monsters.get((x, y))
+    if m is not None:
+        name, hello = m
         print(cowsay.cowsay(hello))
 
 
@@ -34,11 +35,11 @@ while inp := input().split():
         continue
 
     if cmd == "addmon":
-        if len(inp) != 4:
+        if len(inp) != 5:
             print("Invalid arguments")
             continue
 
-        sx, sy, hello = inp[1], inp[2], inp[3]
+        name, sx, sy, hello = inp[1], inp[2], inp[3], inp[4]
 
         if (not sx.isdigit()) or (not sy.isdigit()):
             print("Invalid arguments")
@@ -51,10 +52,14 @@ while inp := input().split():
             print("Invalid arguments")
             continue
 
-        replaced = (mx, my) in monsters
-        monsters[(mx, my)] = hello
+        if name not in cowsay.list_cows():
+            print("Cannot add unknown monster")
+            continue
 
-        print(f"Added monster to ({mx}, {my}) saying {hello}")
+        replaced = (mx, my) in monsters
+        monsters[(mx, my)] = (name, hello)
+
+        print(f"Added monster {name} to ({mx}, {my}) saying {hello}")
         if replaced:
             print("Replaced the old monster")
         continue
