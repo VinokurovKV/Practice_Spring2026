@@ -29,6 +29,8 @@ def encounter(x, y):
             print(cowsay.cowsay(hello, cow=name))
 
 
+print("<<< Welcome to Python-MUD 0.1 >>>")
+
 while inp := input().split():
     cmd = inp[0]
 
