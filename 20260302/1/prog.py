@@ -55,31 +55,49 @@ while inp := shlex.split(input()):
 
     if cmd == "addmon":
 
+        if len(inp) < 8:
+            print("Invalid arguments")
+            continue
+
         name = inp[1]
         params = inp[2:]
 
         hello = None
         hp = None
-        x = None
-        y = None
+        mx = None
+        my = None
 
         i = 0
         while i < len(params):
+
             if params[i] == "hello":
                 hello = params[i+1]
                 i += 2
+
             elif params[i] == "hp":
+                if not params[i+1].isdigit():
+                    print("Invalid arguments")
+                    break
                 hp = int(params[i+1])
                 i += 2
+
             elif params[i] == "coords":
-                x = int(params[i+1])
-                y = int(params[i+2])
+                if not params[i+1].isdigit() or not params[i+2].isdigit():
+                    print("Invalid arguments")
+                    break
+                mx = int(params[i+1])
+                my = int(params[i+2])
                 i += 3
+
             else:
                 print("Invalid arguments")
                 break
 
-        if None in (hello, hp, x, y):
+        if None in (hello, hp, mx, my):
+            print("Invalid arguments")
+            continue
+
+        if not (0 <= mx < W and 0 <= my < H):
             print("Invalid arguments")
             continue
 
@@ -87,12 +105,13 @@ while inp := shlex.split(input()):
             print("Cannot add unknown monster")
             continue
 
-        replaced = (x, y) in monsters
-        monsters[(x, y)] = (name, hello, hp)
+        replaced = (mx, my) in monsters
+        monsters[(mx, my)] = (name, hello, hp)
 
-        print(f"Added monster {name} to ({x}, {y}) saying {hello}")
+        print(f"Added monster {name} to ({mx}, {my}) saying {hello}")
         if replaced:
             print("Replaced the old monster")
+
         continue
 
     print("Invalid command")
