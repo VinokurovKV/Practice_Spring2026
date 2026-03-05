@@ -1,4 +1,5 @@
 import cowsay
+import shlex
 
 W = 10
 H = 10
@@ -21,7 +22,7 @@ jgsbat = cowsay.read_dot_cow(r"""
 def encounter(x, y):
     m = monsters.get((x, y))
     if m is not None:
-        name, hello = m
+        name, hello, hp = m
 
         if name == "jgsbat":
             print(cowsay.cowsay(hello, cowfile=jgsbat))
@@ -31,7 +32,7 @@ def encounter(x, y):
 
 print("<<< Welcome to Python-MUD 0.1 >>>")
 
-while inp := input().split():
+while inp := shlex.split(input()):
     cmd = inp[0]
 
     if cmd in ("up", "down", "left", "right"):
@@ -53,20 +54,32 @@ while inp := input().split():
         continue
 
     if cmd == "addmon":
-        if len(inp) != 5:
-            print("Invalid arguments")
-            continue
 
-        name, sx, sy, hello = inp[1], inp[2], inp[3], inp[4]
+        name = inp[1]
+        params = inp[2:]
 
-        if (not sx.isdigit()) or (not sy.isdigit()):
-            print("Invalid arguments")
-            continue
+        hello = None
+        hp = None
+        x = None
+        y = None
 
-        mx = int(sx)
-        my = int(sy)
+        i = 0
+        while i < len(params):
+            if params[i] == "hello":
+                hello = params[i+1]
+                i += 2
+            elif params[i] == "hp":
+                hp = int(params[i+1])
+                i += 2
+            elif params[i] == "coords":
+                x = int(params[i+1])
+                y = int(params[i+2])
+                i += 3
+            else:
+                print("Invalid arguments")
+                break
 
-        if not (0 <= mx < W and 0 <= my < H):
+        if None in (hello, hp, x, y):
             print("Invalid arguments")
             continue
 
@@ -74,13 +87,12 @@ while inp := input().split():
             print("Cannot add unknown monster")
             continue
 
-        replaced = (mx, my) in monsters
-        monsters[(mx, my)] = (name, hello)
+        replaced = (x, y) in monsters
+        monsters[(x, y)] = (name, hello, hp)
 
-        print(f"Added monster {name} to ({mx}, {my}) saying {hello}")
+        print(f"Added monster {name} to ({x}, {y}) saying {hello}")
         if replaced:
             print("Replaced the old monster")
         continue
 
     print("Invalid command")
-    
