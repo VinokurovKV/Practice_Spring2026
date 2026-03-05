@@ -6,11 +6,27 @@ H = 10
 x, y = 0, 0
 monsters = {}
 
+jgsbat = cowsay.read_dot_cow(r"""
+    ,_                    _,
+    ) '-._  ,_    _,  _.-' (
+    )  _.-'.|\\--//|.'-._  (
+     )'   .'\/o\/o\/'.   `(
+      ) .' . \====/ . '. (
+       )  / <<    >> \  (
+        '-._/``  ``\_.-'
+  jgs     __\\'--'//__
+         (((""`  `"")))
+""")
+
 def encounter(x, y):
     m = monsters.get((x, y))
     if m is not None:
         name, hello = m
-        print(cowsay.cowsay(hello, cow=name))
+
+        if name == "jgsbat":
+            print(cowsay.cowsay(hello, cowfile=jgsbat))
+        else:
+            print(cowsay.cowsay(hello, cow=name))
 
 
 while inp := input().split():
@@ -52,7 +68,7 @@ while inp := input().split():
             print("Invalid arguments")
             continue
 
-        if name not in cowsay.list_cows():
+        if name not in cowsay.list_cows() and name != "jgsbat":
             print("Cannot add unknown monster")
             continue
 
@@ -65,3 +81,4 @@ while inp := input().split():
         continue
 
     print("Invalid command")
+    
