@@ -70,13 +70,31 @@ def parse_addmon_args(arg):
     return name, hello, hp, mx, my
 
 
-def parse_attack_args(arg):
-    parts = shlex.split(arg)
-    if not parts:
-        return "sword"
-    if len(parts) == 2 and parts[0] == "with":
-        return parts[1]
-    return None
+    def parse_attack_args(arg):
+        parts = shlex.split(arg)
+
+        monster = None
+        weapon = "sword"
+
+        if not parts:
+            return monster, weapon
+
+        if parts[0] == "with":
+            if len(parts) != 2:
+                return "INVALID"
+            weapon = parts[1]
+            return monster, weapon
+
+        monster = parts[0]
+
+        if len(parts) == 1:
+            return monster, weapon
+
+        if len(parts) == 3 and parts[1] == "with":
+            weapon = parts[2]
+            return monster, weapon
+
+        return "INVALID"
 
 
 class Game:
@@ -123,14 +141,22 @@ class Game:
         if replaced:
             print("Replaced the old monster")
 
-    def attack(self, weapon):
+    def attack(self, monster_name=None, weapon="sword"):
         if weapon not in WEAPONS:
             print("Unknown weapon")
             return
 
         monster = self.monsters.get((self.x, self.y))
+
         if monster is None:
-            print("No monster here")
+            if monster_name is None:
+                print("No monster here")
+            else:
+                print(f"No {monster_name} here")
+            return
+
+        if monster_name is not None and monster["name"] != monster_name:
+            print(f"No {monster_name} here")
             return
 
         damage = min(WEAPONS[weapon], monster["hp"])
@@ -202,16 +228,30 @@ class MUD(cmd.Cmd):
         self.game.addmon(name, hello, hp, mx, my)
 
     def do_attack(self, arg):
-        weapon = parse_attack_args(arg)
-        if weapon is None:
+        result = parse_attack_args(arg)
+
+        if result == "INVALID":
             print("Invalid arguments")
             return
-        self.game.attack(weapon)
+
+        monster, weapon = result
+        self.game.attack(monster, weapon)
 
     def complete_attack(self, text, line, begidx, endidx):
         parts = shlex.split(line[:begidx])
+
+        if parts == ["attack"]:
+            return [m for m in available_monsters() if m.startswith(text)]
+
         if parts == ["attack", "with"]:
             return [w for w in WEAPONS if w.startswith(text)]
+
+        if len(parts) == 2 and parts[0] == "attack":
+            return [w for w in WEAPONS if w.startswith(text)]
+
+        if len(parts) == 3 and parts[1] == "with":
+            return [w for w in WEAPONS if w.startswith(text)]
+
         return []
 
     def default(self, line):
