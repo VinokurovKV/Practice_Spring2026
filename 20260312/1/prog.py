@@ -5,6 +5,11 @@ import shlex
 W = 10
 H = 10
 CUSTOM_MONSTERS = ["jgsbat"]
+WEAPONS = {
+    "sword": 10,
+    "spear": 15,
+    "axe": 20,
+}
 
 jgsbat = cowsay.read_dot_cow(r"""
     ,_                    _,
@@ -65,6 +70,15 @@ def parse_addmon_args(arg):
     return name, hello, hp, mx, my
 
 
+def parse_attack_args(arg):
+    parts = shlex.split(arg)
+    if not parts:
+        return "sword"
+    if len(parts) == 2 and parts[0] == "with":
+        return parts[1]
+    return None
+
+
 class Game:
     def __init__(self):
         self.x = 0
@@ -109,13 +123,17 @@ class Game:
         if replaced:
             print("Replaced the old monster")
 
-    def attack(self):
+    def attack(self, weapon):
+        if weapon not in WEAPONS:
+            print("Unknown weapon")
+            return
+
         monster = self.monsters.get((self.x, self.y))
         if monster is None:
             print("No monster here")
             return
 
-        damage = min(10, monster["hp"])
+        damage = min(WEAPONS[weapon], monster["hp"])
         monster["hp"] -= damage
 
         print(f"Attacked {monster['name']}, damage {damage} hp")
@@ -184,10 +202,17 @@ class MUD(cmd.Cmd):
         self.game.addmon(name, hello, hp, mx, my)
 
     def do_attack(self, arg):
-        if arg:
+        weapon = parse_attack_args(arg)
+        if weapon is None:
             print("Invalid arguments")
             return
-        self.game.attack()
+        self.game.attack(weapon)
+
+    def complete_attack(self, text, line, begidx, endidx):
+        parts = shlex.split(line[:begidx])
+        if parts == ["attack", "with"]:
+            return [w for w in WEAPONS if w.startswith(text)]
+        return []
 
     def default(self, line):
         print("Invalid command")
