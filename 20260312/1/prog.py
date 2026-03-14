@@ -4,9 +4,6 @@ import shlex
 W = 10
 H = 10
 
-x, y = 0, 0
-monsters = {}
-
 jgsbat = cowsay.read_dot_cow(r"""
     ,_                    _,
     ) '-._  ,_    _,  _.-' (
@@ -19,16 +16,47 @@ jgsbat = cowsay.read_dot_cow(r"""
          (((""`  `"")))
 """)
 
-def encounter(x, y):
-    m = monsters.get((x, y))
-    if m is not None:
-        name, hello, hp = m
 
+class Game:
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.monsters = {}
+
+    def encounter(self):
+        monster = self.monsters.get((self.x, self.y))
+        if monster is None:
+            return
+
+        name, hello, hp = monster
         if name == "jgsbat":
             print(cowsay.cowsay(hello, cowfile=jgsbat))
         else:
             print(cowsay.cowsay(hello, cow=name))
 
+    def move(self, direction):
+        if direction == "up":
+            self.y = (self.y - 1) % H
+        elif direction == "down":
+            self.y = (self.y + 1) % H
+        elif direction == "left":
+            self.x = (self.x - 1) % W
+        elif direction == "right":
+            self.x = (self.x + 1) % W
+
+        print(f"Moved to ({self.x}, {self.y})")
+        self.encounter()
+
+    def addmon(self, name, hello, hp, mx, my):
+        replaced = (mx, my) in self.monsters
+        self.monsters[(mx, my)] = (name, hello, hp)
+
+        print(f"Added monster {name} to ({mx}, {my}) saying {hello}")
+        if replaced:
+            print("Replaced the old monster")
+
+
+game = Game()
 
 print("<<< Welcome to Python-MUD 0.1 >>>")
 
@@ -39,22 +67,10 @@ while inp := shlex.split(input()):
         if len(inp) != 1:
             print("Invalid arguments")
             continue
-
-        if cmd == "up":
-            y = (y - 1) % H
-        elif cmd == "down":
-            y = (y + 1) % H
-        elif cmd == "left":
-            x = (x - 1) % W
-        else:
-            x = (x + 1) % W
-
-        print(f"Moved to ({x}, {y})")
-        encounter(x, y)
+        game.move(cmd)
         continue
 
     if cmd == "addmon":
-
         if len(inp) < 8:
             print("Invalid arguments")
             continue
@@ -68,32 +84,35 @@ while inp := shlex.split(input()):
         my = None
 
         i = 0
+        ok = True
         while i < len(params):
-
             if params[i] == "hello":
-                hello = params[i+1]
+                if i + 1 >= len(params):
+                    ok = False
+                    break
+                hello = params[i + 1]
                 i += 2
-
             elif params[i] == "hp":
-                if not params[i+1].isdigit():
-                    print("Invalid arguments")
+                if i + 1 >= len(params) or not params[i + 1].isdigit():
+                    ok = False
                     break
-                hp = int(params[i+1])
+                hp = int(params[i + 1])
                 i += 2
-
             elif params[i] == "coords":
-                if not params[i+1].isdigit() or not params[i+2].isdigit():
-                    print("Invalid arguments")
+                if i + 2 >= len(params):
+                    ok = False
                     break
-                mx = int(params[i+1])
-                my = int(params[i+2])
+                if not params[i + 1].isdigit() or not params[i + 2].isdigit():
+                    ok = False
+                    break
+                mx = int(params[i + 1])
+                my = int(params[i + 2])
                 i += 3
-
             else:
-                print("Invalid arguments")
+                ok = False
                 break
 
-        if None in (hello, hp, mx, my):
+        if not ok or None in (hello, hp, mx, my):
             print("Invalid arguments")
             continue
 
@@ -105,13 +124,7 @@ while inp := shlex.split(input()):
             print("Cannot add unknown monster")
             continue
 
-        replaced = (mx, my) in monsters
-        monsters[(mx, my)] = (name, hello, hp)
-
-        print(f"Added monster {name} to ({mx}, {my}) saying {hello}")
-        if replaced:
-            print("Replaced the old monster")
-
+        game.addmon(name, hello, hp, mx, my)
         continue
 
     print("Invalid command")
