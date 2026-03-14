@@ -65,6 +65,15 @@ def parse_addmon_args(arg):
     return name, hello, hp, mx, my
 
 
+def parse_attack_args(arg):
+    parts = shlex.split(arg)
+    if len(parts) == 0:
+        return None
+    if len(parts) == 1:
+        return parts[0]
+    return "INVALID"
+
+
 class Game:
     def __init__(self):
         self.x = 0
@@ -109,10 +118,17 @@ class Game:
         if replaced:
             print("Replaced the old monster")
 
-    def attack(self):
+    def attack(self, monster_name=None):
         monster = self.monsters.get((self.x, self.y))
         if monster is None:
-            print("No monster here")
+            if monster_name is None:
+                print("No monster here")
+            else:
+                print(f"No {monster_name} here")
+            return
+
+        if monster_name is not None and monster["name"] != monster_name:
+            print(f"No {monster_name} here")
             return
 
         damage = min(10, monster["hp"])
@@ -184,10 +200,17 @@ class MUD(cmd.Cmd):
         self.game.addmon(name, hello, hp, mx, my)
 
     def do_attack(self, arg):
-        if arg:
+        result = parse_attack_args(arg)
+        if result == "INVALID":
             print("Invalid arguments")
             return
-        self.game.attack()
+        self.game.attack(result)
+
+    def complete_attack(self, text, line, begidx, endidx):
+        parts = shlex.split(line[:begidx])
+        if parts == ["attack"]:
+            return [m for m in available_monsters() if m.startswith(text)]
+        return []
 
     def default(self, line):
         print("Invalid command")
