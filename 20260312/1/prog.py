@@ -4,6 +4,7 @@ import shlex
 
 W = 10
 H = 10
+CUSTOM_MONSTERS = ["jgsbat"]
 
 jgsbat = cowsay.read_dot_cow(r"""
     ,_                    _,
@@ -18,6 +19,52 @@ jgsbat = cowsay.read_dot_cow(r"""
 """)
 
 
+def available_monsters():
+    return cowsay.list_cows() + CUSTOM_MONSTERS
+
+
+def parse_addmon_args(arg):
+    parts = shlex.split(arg)
+    if len(parts) < 7:
+        return None
+
+    name = parts[0]
+    params = parts[1:]
+
+    hello = None
+    hp = None
+    mx = None
+    my = None
+
+    i = 0
+    while i < len(params):
+        if params[i] == "hello":
+            if i + 1 >= len(params):
+                return None
+            hello = params[i + 1]
+            i += 2
+        elif params[i] == "hp":
+            if i + 1 >= len(params) or not params[i + 1].isdigit():
+                return None
+            hp = int(params[i + 1])
+            i += 2
+        elif params[i] == "coords":
+            if i + 2 >= len(params):
+                return None
+            if not params[i + 1].isdigit() or not params[i + 2].isdigit():
+                return None
+            mx = int(params[i + 1])
+            my = int(params[i + 2])
+            i += 3
+        else:
+            return None
+
+    if None in (hello, hp, mx, my):
+        return None
+
+    return name, hello, hp, mx, my
+
+
 class Game:
     def __init__(self):
         self.x = 0
@@ -29,7 +76,9 @@ class Game:
         if monster is None:
             return
 
-        name, hello, hp = monster
+        name = monster["name"]
+        hello = monster["hello"]
+
         if name == "jgsbat":
             print(cowsay.cowsay(hello, cowfile=jgsbat))
         else:
@@ -50,11 +99,18 @@ class Game:
 
     def addmon(self, name, hello, hp, mx, my):
         replaced = (mx, my) in self.monsters
-        self.monsters[(mx, my)] = (name, hello, hp)
+        self.monsters[(mx, my)] = {
+            "name": name,
+            "hello": hello,
+            "hp": hp,
+        }
 
         print(f"Added monster {name} to ({mx}, {my}) saying {hello}")
         if replaced:
             print("Replaced the old monster")
+
+    def current_monster(self):
+        return self.monsters.get((self.x, self.y))
 
 
 class MUD(cmd.Cmd):
@@ -93,57 +149,18 @@ class MUD(cmd.Cmd):
         self.game.move("right")
 
     def do_addmon(self, arg):
-        parts = shlex.split(arg)
-        if len(parts) < 7:
+        parsed = parse_addmon_args(arg)
+        if parsed is None:
             print("Invalid arguments")
             return
 
-        name = parts[0]
-        params = parts[1:]
-
-        hello = None
-        hp = None
-        mx = None
-        my = None
-
-        i = 0
-        ok = True
-        while i < len(params):
-            if params[i] == "hello":
-                if i + 1 >= len(params):
-                    ok = False
-                    break
-                hello = params[i + 1]
-                i += 2
-            elif params[i] == "hp":
-                if i + 1 >= len(params) or not params[i + 1].isdigit():
-                    ok = False
-                    break
-                hp = int(params[i + 1])
-                i += 2
-            elif params[i] == "coords":
-                if i + 2 >= len(params):
-                    ok = False
-                    break
-                if not params[i + 1].isdigit() or not params[i + 2].isdigit():
-                    ok = False
-                    break
-                mx = int(params[i + 1])
-                my = int(params[i + 2])
-                i += 3
-            else:
-                ok = False
-                break
-
-        if not ok or None in (hello, hp, mx, my):
-            print("Invalid arguments")
-            return
+        name, hello, hp, mx, my = parsed
 
         if not (0 <= mx < W and 0 <= my < H):
             print("Invalid arguments")
             return
 
-        if name not in cowsay.list_cows() and name != "jgsbat":
+        if name not in available_monsters():
             print("Cannot add unknown monster")
             return
 
