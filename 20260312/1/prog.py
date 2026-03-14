@@ -1,3 +1,4 @@
+import cmd
 import cowsay
 import shlex
 
@@ -56,27 +57,49 @@ class Game:
             print("Replaced the old monster")
 
 
-game = Game()
+class MUD(cmd.Cmd):
+    intro = "<<< Welcome to Python-MUD 0.1 >>>"
+    prompt = "(mud) "
 
-print("<<< Welcome to Python-MUD 0.1 >>>")
+    def __init__(self):
+        super().__init__()
+        self.game = Game()
 
-while inp := shlex.split(input()):
-    cmd = inp[0]
+    def emptyline(self):
+        pass
 
-    if cmd in ("up", "down", "left", "right"):
-        if len(inp) != 1:
+    def do_up(self, arg):
+        if arg:
             print("Invalid arguments")
-            continue
-        game.move(cmd)
-        continue
+            return
+        self.game.move("up")
 
-    if cmd == "addmon":
-        if len(inp) < 8:
+    def do_down(self, arg):
+        if arg:
             print("Invalid arguments")
-            continue
+            return
+        self.game.move("down")
 
-        name = inp[1]
-        params = inp[2:]
+    def do_left(self, arg):
+        if arg:
+            print("Invalid arguments")
+            return
+        self.game.move("left")
+
+    def do_right(self, arg):
+        if arg:
+            print("Invalid arguments")
+            return
+        self.game.move("right")
+
+    def do_addmon(self, arg):
+        parts = shlex.split(arg)
+        if len(parts) < 7:
+            print("Invalid arguments")
+            return
+
+        name = parts[0]
+        params = parts[1:]
 
         hello = None
         hp = None
@@ -114,17 +137,21 @@ while inp := shlex.split(input()):
 
         if not ok or None in (hello, hp, mx, my):
             print("Invalid arguments")
-            continue
+            return
 
         if not (0 <= mx < W and 0 <= my < H):
             print("Invalid arguments")
-            continue
+            return
 
         if name not in cowsay.list_cows() and name != "jgsbat":
             print("Cannot add unknown monster")
-            continue
+            return
 
-        game.addmon(name, hello, hp, mx, my)
-        continue
+        self.game.addmon(name, hello, hp, mx, my)
 
-    print("Invalid command")
+    def default(self, line):
+        print("Invalid command")
+
+
+if __name__ == "__main__":
+    MUD().cmdloop()
