@@ -1,0 +1,60 @@
+From 890f8a12ea332670e38f22e0db2afbb848350eaa Mon Sep 17 00:00:00 2001
+From: Kirill <kirikvin8490@gmail.com>
+Date: Sun, 22 Mar 2026 10:45:13 +0300
+Subject: [PATCH 2/3] Added playing with server
+
+---
+ 20260316/1/server.py | 32 ++++++++++++++++++++++++++++++++
+ 1 file changed, 32 insertions(+)
+
+diff --git a/20260316/1/server.py b/20260316/1/server.py
+index e723442..1bc547b 100644
+--- a/20260316/1/server.py
++++ b/20260316/1/server.py
+@@ -1,7 +1,11 @@
+ import shlex
++import socket
+ 
+ W = 10
+ H = 10
++HOST = "127.0.0.1"
++PORT = 1337
++
+ 
+ class Game:
+     def __init__(self):
+@@ -84,3 +88,31 @@ def handle_command(game, line):
+         return game.attack(monster_name, damage)
+ 
+     return [""]
++
++
++def main():
++    game = Game()
++
++    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
++        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
++        server.bind((HOST, PORT))
++        server.listen(1)
++
++        while True:
++            conn, _ = server.accept()
++            with conn:
++                fin = conn.makefile("r", encoding="utf-8")
++                fout = conn.makefile("w", encoding="utf-8")
++
++                for line in fin:
++                    line = line.rstrip("\n")
++                    reply = handle_command(game, line)
++
++                    for item in reply:
++                        fout.write(item + "\n")
++                    fout.write("\n")
++                    fout.flush()
++
++
++if __name__ == "__main__":
++    main()
+-- 
+2.43.0
+

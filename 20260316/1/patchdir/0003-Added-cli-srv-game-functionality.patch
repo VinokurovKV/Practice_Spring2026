@@ -1,0 +1,541 @@
+From 0c66d1854e0dfed9a02ee3660f161488f2f1c886 Mon Sep 17 00:00:00 2001
+From: Kirill <kirikvin8490@gmail.com>
+Date: Sun, 22 Mar 2026 11:10:24 +0300
+Subject: [PATCH 3/3] Added cli-srv game functionality
+
+---
+ 20260316/1/Pipfile      |  12 ++
+ 20260316/1/Pipfile.lock |  30 +++++
+ 20260316/1/client.py    | 282 ++++++++++++++++++++++++++++++++++++++++
+ 20260316/1/server.py    |  93 +++++++++----
+ 4 files changed, 390 insertions(+), 27 deletions(-)
+ create mode 100644 20260316/1/Pipfile
+ create mode 100644 20260316/1/Pipfile.lock
+ create mode 100644 20260316/1/client.py
+
+diff --git a/20260316/1/Pipfile b/20260316/1/Pipfile
+new file mode 100644
+index 0000000..a1048cb
+--- /dev/null
++++ b/20260316/1/Pipfile
+@@ -0,0 +1,12 @@
++[[source]]
++url = "https://pypi.org/simple"
++verify_ssl = true
++name = "pypi"
++
++[packages]
++python-cowsay = "*"
++
++[dev-packages]
++
++[requires]
++python_version = "3.12"
+diff --git a/20260316/1/Pipfile.lock b/20260316/1/Pipfile.lock
+new file mode 100644
+index 0000000..ad0c523
+--- /dev/null
++++ b/20260316/1/Pipfile.lock
+@@ -0,0 +1,30 @@
++{
++    "_meta": {
++        "hash": {
++            "sha256": "56b6ab98d232dc88a63b3abd2ef3302f8cd9edb6d8dce111a2e2a14a1cd47b30"
++        },
++        "pipfile-spec": 6,
++        "requires": {
++            "python_version": "3.12"
++        },
++        "sources": [
++            {
++                "name": "pypi",
++                "url": "https://pypi.org/simple",
++                "verify_ssl": true
++            }
++        ]
++    },
++    "default": {
++        "python-cowsay": {
++            "hashes": [
++                "sha256:e2700075e3814dd3d3da40d678f04abfc7916dc8c4ea289449b5d91481061988",
++                "sha256:f0da51568721cf4a921171e825896489b0b304d7843e1ef51c89c8c52994f1d2"
++            ],
++            "index": "pypi",
++            "markers": "python_version >= '3.8'",
++            "version": "==1.2.2"
++        }
++    },
++    "develop": {}
++}
+diff --git a/20260316/1/client.py b/20260316/1/client.py
+new file mode 100644
+index 0000000..a4874b1
+--- /dev/null
++++ b/20260316/1/client.py
+@@ -0,0 +1,282 @@
++import cmd
++import cowsay
++import shlex
++import socket
++import io
++
++W = 10
++H = 10
++HOST = "127.0.0.1"
++PORT = 1337
++
++CUSTOM_MONSTERS = ["jgsbat"]
++WEAPONS = {
++    "sword": 10,
++    "spear": 15,
++    "axe": 20,
++}
++
++jgsbat = cowsay.read_dot_cow(io.StringIO(r"""
++    ,_                    _,
++    ) '-._  ,_    _,  _.-' (
++    )  _.-'.|\\--//|.'-._  (
++     )'   .'\/o\/o\/'.   `(
++      ) .' . \====/ . '. (
++       )  / <<    >> \  (
++        '-._/``  ``\_.-'
++  jgs     \\'--'//
++         (((""  "")))
++"""))
++
++
++def available_monsters():
++    return cowsay.list_cows() + CUSTOM_MONSTERS
++
++
++def parse_addmon_args(arg):
++    parts = shlex.split(arg)
++    if len(parts) < 7:
++        return None
++
++    name = parts[0]
++    params = parts[1:]
++
++    hello = None
++    hp = None
++    mx = None
++    my = None
++
++    i = 0
++    while i < len(params):
++        if params[i] == "hello":
++            if i + 1 >= len(params):
++                return None
++            hello = params[i + 1]
++            i += 2
++        elif params[i] == "hp":
++            if i + 1 >= len(params) or not params[i + 1].isdigit():
++                return None
++            hp = int(params[i + 1])
++            i += 2
++        elif params[i] == "coords":
++            if i + 2 >= len(params):
++                return None
++            if not params[i + 1].isdigit() or not params[i + 2].isdigit():
++                return None
++            mx = int(params[i + 1])
++            my = int(params[i + 2])
++            i += 3
++        else:
++            return None
++
++    if None in (hello, hp, mx, my):
++        return None
++
++    return name, hello, hp, mx, my
++
++
++def parse_attack_args(arg):
++    parts = shlex.split(arg)
++
++    monster = "*"
++    weapon = "sword"
++
++    if not parts:
++        return monster, weapon
++
++    if parts[0] == "with":
++        if len(parts) != 2:
++            return "INVALID"
++        weapon = parts[1]
++        return monster, weapon
++
++    monster = parts[0]
++
++    if len(parts) == 1:
++        return monster, weapon
++
++    if len(parts) == 3 and parts[1] == "with":
++        weapon = parts[2]
++        return monster, weapon
++
++    return "INVALID"
++
++
++class Client:
++    def __init__(self, host, port):
++        self.sock = socket.create_connection((host, port))
++        self.fin = self.sock.makefile("r", encoding="utf-8")
++        self.fout = self.sock.makefile("w", encoding="utf-8")
++
++    def request(self, line):
++        self.fout.write(line + "\n")
++        self.fout.flush()
++
++        result = []
++        while True:
++            reply = self.fin.readline()
++            if reply == "":
++                break
++            reply = reply.rstrip("\n")
++            if reply == "":
++                break
++            result.append(reply)
++        return result
++
++    def close(self):
++        self.fin.close()
++        self.fout.close()
++        self.sock.close()
++
++
++class MUDClient(cmd.Cmd):
++    intro = "<<< Welcome to Python-MUD 0.1 >>>"
++    prompt = "(mud) "
++
++    def __init__(self):
++        super().__init__()
++        self.client = Client(HOST, PORT)
++
++    def emptyline(self):
++        pass
++
++    def default(self, line):
++        print("Invalid command")
++
++    def print_reply(self, reply):
++        for line in reply:
++            parts = shlex.split(line)
++
++            if not parts:
++                continue
++
++            if parts[0] == "moved":
++                print(f"Moved to ({parts[1]}, {parts[2]})")
++
++            elif parts[0] == "encounter":
++                name = parts[1]
++                hello = parts[2]
++                if name == "jgsbat":
++                    print(cowsay.cowsay(hello, cowfile=jgsbat))
++                else:
++                    print(cowsay.cowsay(hello, cow=name))
++
++            elif parts[0] == "added":
++                name, x, y, hello = parts[1], parts[2], parts[3], parts[4]
++                print(f"Added monster {name} to ({x}, {y}) saying {hello}")
++
++            elif parts[0] == "replaced":
++                print("Replaced the old monster")
++
++            elif parts[0] == "nomonster":
++                if len(parts) == 1:
++                    print("No monster here")
++                else:
++                    print(f"No {parts[1]} here")
++
++
++            elif parts[0] == "attacked":
++                name = parts[1]
++                damage = parts[2]
++                hp_left = int(parts[3])
++
++                print(f"Attacked {name}, damage {damage} hp")
++
++                if hp_left == 0:
++                    print(f"{name} died")
++                else:
++                    print(f"{name} now has {hp_left}")
++
++    def do_up(self, arg):
++        if arg:
++            print("Invalid arguments")
++            return
++        self.print_reply(self.client.request("move 0 -1"))
++
++    def do_down(self, arg):
++        if arg:
++            print("Invalid arguments")
++            return
++        self.print_reply(self.client.request("move 0 1"))
++
++    def do_left(self, arg):
++        if arg:
++            print("Invalid arguments")
++            return
++        self.print_reply(self.client.request("move -1 0"))
++
++    def do_right(self, arg):
++        if arg:
++            print("Invalid arguments")
++            return
++        self.print_reply(self.client.request("move 1 0"))
++
++    def do_addmon(self, arg):
++        parsed = parse_addmon_args(arg)
++        if parsed is None:
++            print("Invalid arguments")
++            return
++
++        name, hello, hp, mx, my = parsed
++
++        if not (0 <= mx < W and 0 <= my < H):
++            print("Invalid arguments")
++            return
++
++        if name not in available_monsters():
++            print("Cannot add unknown monster")
++            return
++
++        request = "addmon {} {} {} {} {}".format(
++            shlex.quote(name),
++            shlex.quote(hello),
++            hp,
++            mx,
++            my,
++        )
++        self.print_reply(self.client.request(request))
++
++    def do_attack(self, arg):
++        parsed = parse_attack_args(arg)
++        if parsed == "INVALID":
++            print("Invalid arguments")
++            return
++
++        monster, weapon = parsed
++
++        if weapon not in WEAPONS:
++            print("Unknown weapon")
++            return
++
++        damage = WEAPONS[weapon]
++        request = f"attack {shlex.quote(monster)} {damage}"
++        self.print_reply(self.client.request(request))
++
++    def complete_attack(self, text, line, begidx, endidx):
++        parts = shlex.split(line[:begidx])
++
++        if parts == ["attack"]:
++            return [m for m in available_monsters() if m.startswith(text)]
++
++        if parts == ["attack", "with"]:
++            return [w for w in WEAPONS if w.startswith(text)]
++
++        if len(parts) == 2 and parts[0] == "attack":
++            options = []
++            if "with".startswith(text):
++                options.append("with")
++            return options
++
++        if len(parts) == 3 and parts[0] == "attack" and parts[2] == "with":
++            return [w for w in WEAPONS if w.startswith(text)]
++
++        return []
++
++    def do_EOF(self, arg):
++        print()
++        self.client.close()
++        return True
++
++
++if __name__ == "__main__":
++    MUDClient().cmdloop()
+diff --git a/20260316/1/server.py b/20260316/1/server.py
+index 1bc547b..b9fabba 100644
+--- a/20260316/1/server.py
++++ b/20260316/1/server.py
+@@ -1,5 +1,6 @@
+ import shlex
+ import socket
++import datetime
+ 
+ W = 10
+ H = 10
+@@ -13,29 +14,43 @@ class Game:
+         self.y = 0
+         self.monsters = {}
+ 
++    def log(self, message, level="INFO"):
++        """Вывод логов сервера"""
++        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
++        print(f"[{timestamp}] [{level}] {message}")
++
+     def move(self, dx, dy):
++        old_x, old_y = self.x, self.y
+         self.x = (self.x + dx) % W
+         self.y = (self.y + dy) % H
++        
++        self.log(f"Player moved from ({old_x},{old_y}) to ({self.x},{self.y})")
+ 
+         result = [f"moved {self.x} {self.y}"]
+ 
+         monster = self.monsters.get((self.x, self.y))
+         if monster is not None:
+-            result.append(
+-                f"encounter {shlex.quote(monster['name'])} {shlex.quote(monster['hello'])}"
+-            )
++            self.log(f"Encountered monster '{monster['name']}' at ({self.x},{self.y})")
++            result.append(f"encounter {monster['name']} {monster['hello']}")
+ 
+         return result
+ 
+     def addmon(self, name, hello, hp, mx, my):
+         replaced = (mx, my) in self.monsters
++        
++        if replaced:
++            old_name = self.monsters[(mx, my)]['name']
++            self.log(f"Replaced monster '{old_name}' with '{name}' at ({mx},{my})")
++        else:
++            self.log(f"Added new monster '{name}' at ({mx},{my}) with HP={hp}")
++        
+         self.monsters[(mx, my)] = {
+             "name": name,
+             "hello": hello,
+             "hp": hp,
+         }
+ 
+-        result = [f"added {shlex.quote(name)} {mx} {my} {shlex.quote(hello)}"]
++        result = [f"added {name} {mx} {my} {hello}"]
+         if replaced:
+             result.append("replaced")
+         return result
+@@ -44,22 +59,27 @@ class Game:
+         monster = self.monsters.get((self.x, self.y))
+ 
+         if monster is None:
++            self.log(f"Attack failed: no monster at ({self.x},{self.y})")
+             if monster_name == "*":
+                 return ["nomonster"]
+-            return [f"nomonster {shlex.quote(monster_name)}"]
++            return [f"nomonster {monster_name}"]
+ 
+         if monster_name != "*" and monster["name"] != monster_name:
+-            return [f"nomonster {shlex.quote(monster_name)}"]
++            self.log(f"Attack failed: monster '{monster_name}' not found at ({self.x},{self.y})")
++            return [f"nomonster {monster_name}"]
+ 
+         actual_damage = min(damage, monster["hp"])
+         monster["hp"] -= actual_damage
+         name = monster["name"]
+         hp_left = monster["hp"]
+ 
++        self.log(f"Attacked '{name}', damage {actual_damage}, HP left: {hp_left}")
++
+         if hp_left == 0:
++            self.log(f"Monster '{name}' died")
+             del self.monsters[(self.x, self.y)]
+ 
+-        return [f"attacked {shlex.quote(name)} {actual_damage} {hp_left}"]
++        return [f"attacked {name} {actual_damage} {hp_left}"]
+ 
+ 
+ def handle_command(game, line):
+@@ -69,50 +89,69 @@ def handle_command(game, line):
+ 
+     cmd = parts[0]
+ 
+-    if cmd == "move":
+-        dx = int(parts[1])
+-        dy = int(parts[2])
+-        return game.move(dx, dy)
+-
+-    if cmd == "addmon":
+-        name = parts[1]
+-        hello = parts[2]
+-        hp = int(parts[3])
+-        mx = int(parts[4])
+-        my = int(parts[5])
+-        return game.addmon(name, hello, hp, mx, my)
+-
+-    if cmd == "attack":
+-        monster_name = parts[1]
+-        damage = int(parts[2])
+-        return game.attack(monster_name, damage)
++    try:
++        if cmd == "move":
++            dx = int(parts[1])
++            dy = int(parts[2])
++            return game.move(dx, dy)
++
++        if cmd == "addmon":
++            name = parts[1]
++            hello = parts[2]
++            hp = int(parts[3])
++            mx = int(parts[4])
++            my = int(parts[5])
++            return game.addmon(name, hello, hp, mx, my)
++
++        if cmd == "attack":
++            monster_name = parts[1]
++            damage = int(parts[2])
++            return game.attack(monster_name, damage)
++            
++    except (IndexError, ValueError) as e:
++        game.log(f"Error parsing command: {e}", "ERROR")
++        return [""]
+ 
++    game.log(f"Unknown command: {cmd}", "WARNING")
+     return [""]
+ 
+ 
+ def main():
+     game = Game()
++    game.log(f"Server started on {HOST}:{PORT}")
+ 
+     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+         server.bind((HOST, PORT))
+         server.listen(1)
+ 
++        client_num = 1
+         while True:
+-            conn, _ = server.accept()
++            game.log(f"Waiting for connection...")
++            conn, addr = server.accept()
++            game.log(f"Client #{client_num} connected from {addr}")
++            
+             with conn:
+                 fin = conn.makefile("r", encoding="utf-8")
+                 fout = conn.makefile("w", encoding="utf-8")
+ 
+                 for line in fin:
+                     line = line.rstrip("\n")
++                    if not line:
++                        continue
++                    
++                    game.log(f"Received: {line}")
++                    
+                     reply = handle_command(game, line)
+-
++                    
+                     for item in reply:
+                         fout.write(item + "\n")
+                     fout.write("\n")
+                     fout.flush()
++                
++                game.log(f"Client #{client_num} disconnected")
++                client_num += 1
+ 
+ 
+ if __name__ == "__main__":
+-    main()
++    main()
+\ No newline at end of file
+-- 
+2.43.0
+
