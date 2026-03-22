@@ -1,7 +1,11 @@
 import shlex
+import socket
 
 W = 10
 H = 10
+HOST = "127.0.0.1"
+PORT = 1337
+
 
 class Game:
     def __init__(self):
@@ -84,3 +88,31 @@ def handle_command(game, line):
         return game.attack(monster_name, damage)
 
     return [""]
+
+
+def main():
+    game = Game()
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((HOST, PORT))
+        server.listen(1)
+
+        while True:
+            conn, _ = server.accept()
+            with conn:
+                fin = conn.makefile("r", encoding="utf-8")
+                fout = conn.makefile("w", encoding="utf-8")
+
+                for line in fin:
+                    line = line.rstrip("\n")
+                    reply = handle_command(game, line)
+
+                    for item in reply:
+                        fout.write(item + "\n")
+                    fout.write("\n")
+                    fout.flush()
+
+
+if __name__ == "__main__":
+    main()
