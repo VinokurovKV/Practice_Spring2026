@@ -4,6 +4,7 @@ import shlex
 import socket
 import io
 import sys
+import threading
 
 W = 10
 H = 10
@@ -112,27 +113,43 @@ class Client:
         self.fout.write(username + "\n")
         self.fout.flush()
 
-    def request(self, line):
+    def send(self, line):
         self.fout.write(line + "\n")
         self.fout.flush()
-        return self.read_block()
 
     def read_block(self):
         result = []
         while True:
             reply = self.fin.readline()
             if reply == "":
-                break
+                return None
             reply = reply.rstrip("\n")
             if reply == "":
                 break
             result.append(reply)
-        return result
+        return "\n".join(result)
 
     def close(self):
         self.fin.close()
         self.fout.close()
         self.sock.close()
+
+
+def receiver(cmdline):
+    while cmdline.alive:
+        try:
+            message = cmdline.client.read_block()
+        except OSError:
+            break
+
+        if message is None:
+            break
+
+        if message:
+            print()
+            print(message)
+
+    cmdline.alive = False
 
 
 class MUDClient(cmd.Cmd):
@@ -142,10 +159,21 @@ class MUDClient(cmd.Cmd):
     def __init__(self, username):
         super().__init__()
         self.client = Client(HOST, PORT, username)
+        self.alive = True
 
         login_reply = self.client.read_block()
-        for line in login_reply:
-            print(line)
+        if login_reply is None:
+            print("Connection closed")
+            raise SystemExit(1)
+
+        print(login_reply)
+
+        if not login_reply.startswith("Successfully logged in as "):
+            self.client.close()
+            raise SystemExit(1)
+
+        self.receiver_thread = threading.Thread(target=receiver, args=(self,), daemon=True)
+        self.receiver_thread.start()
 
     def emptyline(self):
         pass
@@ -153,33 +181,29 @@ class MUDClient(cmd.Cmd):
     def default(self, line):
         print("Invalid command")
 
-    def print_reply(self, reply):
-        for line in reply:
-            print(line)
-
     def do_up(self, arg):
         if arg:
             print("Invalid arguments")
             return
-        self.print_reply(self.client.request("move 0 -1"))
+        self.client.send("move 0 -1")
 
     def do_down(self, arg):
         if arg:
             print("Invalid arguments")
             return
-        self.print_reply(self.client.request("move 0 1"))
+        self.client.send("move 0 1")
 
     def do_left(self, arg):
         if arg:
             print("Invalid arguments")
             return
-        self.print_reply(self.client.request("move -1 0"))
+        self.client.send("move -1 0")
 
     def do_right(self, arg):
         if arg:
             print("Invalid arguments")
             return
-        self.print_reply(self.client.request("move 1 0"))
+        self.client.send("move 1 0")
 
     def do_addmon(self, arg):
         parsed = parse_addmon_args(arg)
@@ -204,7 +228,7 @@ class MUDClient(cmd.Cmd):
             mx,
             my,
         )
-        self.print_reply(self.client.request(request))
+        self.client.send(request)
 
     def do_attack(self, arg):
         parsed = parse_attack_args(arg)
@@ -224,7 +248,7 @@ class MUDClient(cmd.Cmd):
             damage,
             shlex.quote(weapon),
         )
-        self.print_reply(self.client.request(request))
+        self.client.send(request)
 
     def complete_attack(self, text, line, begidx, endidx):
         parts = shlex.split(line[:begidx])
@@ -248,6 +272,7 @@ class MUDClient(cmd.Cmd):
 
     def do_EOF(self, arg):
         print()
+        self.alive = False
         self.client.close()
         return True
 
