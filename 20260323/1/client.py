@@ -115,8 +115,11 @@ class Client:
         self.fout.flush()
 
     def send(self, line):
-        self.fout.write(line + "\n")
-        self.fout.flush()
+        try:
+            self.fout.write(line + "\n")
+            self.fout.flush()
+        except OSError:
+            pass
 
     def read_block(self):
         result = []
@@ -131,9 +134,25 @@ class Client:
         return "\n".join(result)
 
     def close(self):
-        self.fin.close()
-        self.fout.close()
-        self.sock.close()
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+        try:
+            self.fin.close()
+        except OSError:
+            pass
+
+        try:
+            self.fout.close()
+        except OSError:
+            pass
+
+        try:
+            self.sock.close()
+        except OSError:
+            pass
 
 
 def receiver(cmdline):
@@ -176,7 +195,9 @@ class MUDClient(cmd.Cmd):
             self.client.close()
             raise SystemExit(1)
 
-        self.receiver_thread = threading.Thread(target=receiver, args=(self,), daemon=True)
+        self.receiver_thread = threading.Thread(
+            target=receiver, args=(self,), daemon=True
+        )
         self.receiver_thread.start()
 
     def emptyline(self):
@@ -277,7 +298,12 @@ class MUDClient(cmd.Cmd):
     def do_EOF(self, arg):
         print()
         self.alive = False
+
         self.client.close()
+
+        if self.receiver_thread.is_alive():
+            self.receiver_thread.join(timeout=1)
+
         return True
 
 
