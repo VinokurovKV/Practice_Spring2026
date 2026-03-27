@@ -1,11 +1,37 @@
+import io
 import shlex
 import socket
-import datetime
+import cowsay
 
 W = 10
 H = 10
 HOST = "127.0.0.1"
 PORT = 1337
+
+CUSTOM_MONSTERS = ["jgsbat"]
+WEAPONS = {
+    "sword": 10,
+    "spear": 15,
+    "axe": 20,
+}
+
+jgsbat = cowsay.read_dot_cow(io.StringIO(r"""
+    ,_                    _,
+    ) '-._  ,_    _,  _.-' (
+    )  _.-'.|\\--//|.'-._  (
+     )'   .'\/o\/o\/'.   `(
+      ) .' . \====/ . '. (
+       )  / <<    >> \  (
+        '-._/``  ``\_.-'
+  jgs     \\'--'//
+         (((""  "")))
+"""))
+
+
+def make_monster_message(name, hello):
+    if name == "jgsbat":
+        return cowsay.cowsay(hello, cowfile=jgsbat)
+    return cowsay.cowsay(hello, cow=name)
 
 
 class Game:
@@ -14,78 +40,65 @@ class Game:
         self.y = 0
         self.monsters = {}
 
-    def log(self, message, level="INFO"):
-        """Вывод логов сервера"""
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"[{timestamp}] [{level}] {message}")
-
     def move(self, dx, dy):
-        old_x, old_y = self.x, self.y
         self.x = (self.x + dx) % W
         self.y = (self.y + dy) % H
-        
-        self.log(f"Player moved from ({old_x},{old_y}) to ({self.x},{self.y})")
 
-        result = [f"moved {self.x} {self.y}"]
+        result = [f"Moved to ({self.x}, {self.y})"]
 
         monster = self.monsters.get((self.x, self.y))
         if monster is not None:
-            self.log(f"Encountered monster '{monster['name']}' at ({self.x},{self.y})")
-            result.append(f"encounter {monster['name']} {monster['hello']}")
+            result.append(make_monster_message(monster["name"], monster["hello"]))
 
         return result
 
     def addmon(self, name, hello, hp, mx, my):
         replaced = (mx, my) in self.monsters
-        
-        if replaced:
-            old_name = self.monsters[(mx, my)]['name']
-            self.log(f"Replaced monster '{old_name}' with '{name}' at ({mx},{my})")
-        else:
-            self.log(f"Added new monster '{name}' at ({mx},{my}) with HP={hp}")
-        
+
         self.monsters[(mx, my)] = {
             "name": name,
             "hello": hello,
             "hp": hp,
         }
 
-        result = [f"added {name} {mx} {my} {hello}"]
+        result = [
+            f"Added monster {name} to ({mx}, {my}) saying {hello} with {hp} hp"
+        ]
         if replaced:
-            result.append("replaced")
+            result.append("Replaced the old monster")
         return result
 
-    def attack(self, monster_name, damage):
+    def attack(self, monster_name, damage, weapon_name):
         monster = self.monsters.get((self.x, self.y))
 
         if monster is None:
-            self.log(f"Attack failed: no monster at ({self.x},{self.y})")
             if monster_name == "*":
-                return ["nomonster"]
-            return [f"nomonster {monster_name}"]
+                return ["No monster here"]
+            return [f"No {monster_name} here"]
 
         if monster_name != "*" and monster["name"] != monster_name:
-            self.log(f"Attack failed: monster '{monster_name}' not found at ({self.x},{self.y})")
-            return [f"nomonster {monster_name}"]
+            return [f"No {monster_name} here"]
 
         actual_damage = min(damage, monster["hp"])
         monster["hp"] -= actual_damage
         name = monster["name"]
         hp_left = monster["hp"]
 
-        self.log(f"Attacked '{name}', damage {actual_damage}, HP left: {hp_left}")
+        result = [f"Attacked {name} with {weapon_name}, damage {actual_damage} hp"]
 
         if hp_left == 0:
-            self.log(f"Monster '{name}' died")
             del self.monsters[(self.x, self.y)]
+            result.append(f"{name} died")
+        else:
+            result.append(f"{name} now has {hp_left} hp")
 
-        return [f"attacked {name} {actual_damage} {hp_left}"]
+        return result
 
 
 def handle_command(game, line):
     parts = shlex.split(line)
     if not parts:
-        return [""]
+        return []
 
     cmd = parts[0]
 
@@ -106,51 +119,51 @@ def handle_command(game, line):
         if cmd == "attack":
             monster_name = parts[1]
             damage = int(parts[2])
-            return game.attack(monster_name, damage)
-            
-    except (IndexError, ValueError) as e:
-        game.log(f"Error parsing command: {e}", "ERROR")
-        return [""]
+            weapon_name = parts[3]
+            return game.attack(monster_name, damage, weapon_name)
 
-    game.log(f"Unknown command: {cmd}", "WARNING")
-    return [""]
+    except (IndexError, ValueError):
+        return ["Invalid command"]
+
+    return ["Invalid command"]
+
+
+def send_block(fout, lines):
+    for line in lines:
+        fout.write(line + "\n")
+    fout.write("\n")
+    fout.flush()
 
 
 def main():
     game = Game()
-    game.log(f"Server started on {HOST}:{PORT}")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((HOST, PORT))
         server.listen(1)
 
-        client_num = 1
         while True:
-            game.log(f"Waiting for connection...")
             conn, addr = server.accept()
-            game.log(f"Client #{client_num} connected from {addr}")
-            
+
             with conn:
                 fin = conn.makefile("r", encoding="utf-8")
                 fout = conn.makefile("w", encoding="utf-8")
+
+                username = fin.readline().rstrip("\n")
+                if not username or any(ch.isspace() for ch in username):
+                    send_block(fout, ["Invalid username"])
+                    continue
+
+                send_block(fout, [f"Successfully logged in as {username}"])
 
                 for line in fin:
                     line = line.rstrip("\n")
                     if not line:
                         continue
-                    
-                    game.log(f"Received: {line}")
-                    
+
                     reply = handle_command(game, line)
-                    
-                    for item in reply:
-                        fout.write(item + "\n")
-                    fout.write("\n")
-                    fout.flush()
-                
-                game.log(f"Client #{client_num} disconnected")
-                client_num += 1
+                    send_block(fout, reply)
 
 
 if __name__ == "__main__":

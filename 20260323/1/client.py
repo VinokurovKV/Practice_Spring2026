@@ -3,6 +3,7 @@ import cowsay
 import shlex
 import socket
 import io
+import sys
 
 W = 10
 H = 10
@@ -103,15 +104,20 @@ def parse_attack_args(arg):
 
 
 class Client:
-    def __init__(self, host, port):
+    def __init__(self, host, port, username):
         self.sock = socket.create_connection((host, port))
         self.fin = self.sock.makefile("r", encoding="utf-8")
         self.fout = self.sock.makefile("w", encoding="utf-8")
 
+        self.fout.write(username + "\n")
+        self.fout.flush()
+
     def request(self, line):
         self.fout.write(line + "\n")
         self.fout.flush()
+        return self.read_block()
 
+    def read_block(self):
         result = []
         while True:
             reply = self.fin.readline()
@@ -133,9 +139,13 @@ class MUDClient(cmd.Cmd):
     intro = "<<< Welcome to Python-MUD 0.1 >>>"
     prompt = "(mud) "
 
-    def __init__(self):
+    def __init__(self, username):
         super().__init__()
-        self.client = Client(HOST, PORT)
+        self.client = Client(HOST, PORT, username)
+
+        login_reply = self.client.read_block()
+        for line in login_reply:
+            print(line)
 
     def emptyline(self):
         pass
@@ -145,47 +155,7 @@ class MUDClient(cmd.Cmd):
 
     def print_reply(self, reply):
         for line in reply:
-            parts = shlex.split(line)
-
-            if not parts:
-                continue
-
-            if parts[0] == "moved":
-                print(f"Moved to ({parts[1]}, {parts[2]})")
-
-            elif parts[0] == "encounter":
-                name = parts[1]
-                hello = parts[2]
-                if name == "jgsbat":
-                    print(cowsay.cowsay(hello, cowfile=jgsbat))
-                else:
-                    print(cowsay.cowsay(hello, cow=name))
-
-            elif parts[0] == "added":
-                name, x, y, hello = parts[1], parts[2], parts[3], parts[4]
-                print(f"Added monster {name} to ({x}, {y}) saying {hello}")
-
-            elif parts[0] == "replaced":
-                print("Replaced the old monster")
-
-            elif parts[0] == "nomonster":
-                if len(parts) == 1:
-                    print("No monster here")
-                else:
-                    print(f"No {parts[1]} here")
-
-
-            elif parts[0] == "attacked":
-                name = parts[1]
-                damage = parts[2]
-                hp_left = int(parts[3])
-
-                print(f"Attacked {name}, damage {damage} hp")
-
-                if hp_left == 0:
-                    print(f"{name} died")
-                else:
-                    print(f"{name} now has {hp_left}")
+            print(line)
 
     def do_up(self, arg):
         if arg:
@@ -249,7 +219,11 @@ class MUDClient(cmd.Cmd):
             return
 
         damage = WEAPONS[weapon]
-        request = f"attack {shlex.quote(monster)} {damage}"
+        request = "attack {} {} {}".format(
+            shlex.quote(monster),
+            damage,
+            shlex.quote(weapon),
+        )
         self.print_reply(self.client.request(request))
 
     def complete_attack(self, text, line, begidx, endidx):
@@ -279,4 +253,15 @@ class MUDClient(cmd.Cmd):
 
 
 if __name__ == "__main__":
-    MUDClient().cmdloop()
+    if len(sys.argv) < 2:
+        print("Usage: python client.py <username> [host] [port]")
+        raise SystemExit(1)
+
+    username = sys.argv[1]
+
+    if len(sys.argv) >= 3:
+        HOST = sys.argv[2]
+    if len(sys.argv) >= 4:
+        PORT = int(sys.argv[3])
+
+    MUDClient(username).cmdloop()
