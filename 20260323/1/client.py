@@ -5,6 +5,7 @@ import socket
 import io
 import sys
 import threading
+import readline
 
 W = 10
 H = 10
@@ -146,8 +147,11 @@ def receiver(cmdline):
             break
 
         if message:
-            print()
-            print(message)
+            print(
+                f"\n{message}\n{cmdline.prompt}{readline.get_line_buffer()}",
+                end="",
+                flush=True,
+            )
 
     cmdline.alive = False
 
