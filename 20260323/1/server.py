@@ -1,6 +1,8 @@
+import asyncio
 import io
 import shlex
-import socket
+from dataclasses import dataclass, field
+
 import cowsay
 
 W = 10
@@ -34,19 +36,24 @@ def make_monster_message(name, hello):
     return cowsay.cowsay(hello, cow=name)
 
 
+@dataclass
+class ClientState:
+    name: str
+    reader: asyncio.StreamReader
+    writer: asyncio.StreamWriter
+    x: int = 0
+    y: int = 0
+    queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+
+
 class Game:
     def __init__(self):
-        self.x = 0
-        self.y = 0
         self.monsters = {}
 
-    def move(self, dx, dy):
-        self.x = (self.x + dx) % W
-        self.y = (self.y + dy) % H
+    def move(self, client):
+        result = [f"Moved to ({client.x}, {client.y})"]
 
-        result = [f"Moved to ({self.x}, {self.y})"]
-
-        monster = self.monsters.get((self.x, self.y))
+        monster = self.monsters.get((client.x, client.y))
         if monster is not None:
             result.append(make_monster_message(monster["name"], monster["hello"]))
 
@@ -62,43 +69,79 @@ class Game:
         }
 
         result = [
-            f"Added monster {name} to ({mx}, {my}) saying {hello} with {hp} hp"
+            f"added monster {name} to ({mx}, {my}) saying {hello} with {hp} hp"
         ]
         if replaced:
             result.append("Replaced the old monster")
         return result
 
-    def attack(self, monster_name, damage, weapon_name):
-        monster = self.monsters.get((self.x, self.y))
+    def attack(self, client_name, x, y, monster_name, damage, weapon_name):
+        monster = self.monsters.get((x, y))
 
         if monster is None:
             if monster_name == "*":
-                return ["No monster here"]
-            return [f"No {monster_name} here"]
+                return [False, ["No monster here"]]
+            return [False, [f"No {monster_name} here"]]
 
         if monster_name != "*" and monster["name"] != monster_name:
-            return [f"No {monster_name} here"]
+            return [False, [f"No {monster_name} here"]]
 
         actual_damage = min(damage, monster["hp"])
         monster["hp"] -= actual_damage
         name = monster["name"]
         hp_left = monster["hp"]
 
-        result = [f"Attacked {name} with {weapon_name}, damage {actual_damage} hp"]
-
         if hp_left == 0:
-            del self.monsters[(self.x, self.y)]
-            result.append(f"{name} died")
-        else:
-            result.append(f"{name} now has {hp_left} hp")
+            del self.monsters[(x, y)]
+            return [
+                True,
+                [
+                    f"{client_name} attacked {name} with {weapon_name}, damage {actual_damage} hp",
+                    f"{name} died",
+                ],
+            ]
 
-        return result
+        return [
+            True,
+            [
+                f"{client_name} attacked {name} with {weapon_name}, damage {actual_damage} hp",
+                f"{name} now has {hp_left} hp",
+            ],
+        ]
 
 
-def handle_command(game, line):
+game = Game()
+clients = {}
+
+
+def send_to(client, message_lines):
+    if isinstance(message_lines, str):
+        client.queue.put_nowait(message_lines)
+    else:
+        client.queue.put_nowait("\n".join(message_lines))
+
+
+def broadcast(message_lines):
+    if isinstance(message_lines, str):
+        payload = message_lines
+    else:
+        payload = "\n".join(message_lines)
+
+    for client in clients.values():
+        client.queue.put_nowait(payload)
+
+
+async def writer_task(client):
+    while True:
+        message = await client.queue.get()
+        client.writer.write((message + "\n\n").encode())
+        await client.writer.drain()
+
+
+def process_command(client, line):
     parts = shlex.split(line)
     if not parts:
-        return []
+        return
 
     cmd = parts[0]
 
@@ -106,7 +149,12 @@ def handle_command(game, line):
         if cmd == "move":
             dx = int(parts[1])
             dy = int(parts[2])
-            return game.move(dx, dy)
+
+            client.x = (client.x + dx) % W
+            client.y = (client.y + dy) % H
+
+            send_to(client, game.move(client))
+            return
 
         if cmd == "addmon":
             name = parts[1]
@@ -114,57 +162,110 @@ def handle_command(game, line):
             hp = int(parts[3])
             mx = int(parts[4])
             my = int(parts[5])
-            return game.addmon(name, hello, hp, mx, my)
+
+            lines = game.addmon(name, hello, hp, mx, my)
+            broadcast([f"{client.name} " + lines[0]])
+            if len(lines) > 1:
+                send_to(client, lines[1])
+            return
 
         if cmd == "attack":
             monster_name = parts[1]
             damage = int(parts[2])
             weapon_name = parts[3]
-            return game.attack(monster_name, damage, weapon_name)
+
+            success, lines = game.attack(
+                client.name,
+                client.x,
+                client.y,
+                monster_name,
+                damage,
+                weapon_name,
+            )
+
+            if success:
+                broadcast(lines)
+            else:
+                send_to(client, lines)
+            return
 
     except (IndexError, ValueError):
-        return ["Invalid command"]
+        send_to(client, "Invalid command")
+        return
 
-    return ["Invalid command"]
-
-
-def send_block(fout, lines):
-    for line in lines:
-        fout.write(line + "\n")
-    fout.write("\n")
-    fout.flush()
+    send_to(client, "Invalid command")
 
 
-def main():
-    game = Game()
+async def handle_client(reader, writer):
+    client = None
+    sender = None
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind((HOST, PORT))
-        server.listen(1)
+    try:
+        login_line = await reader.readline()
+        if not login_line:
+            writer.close()
+            await writer.wait_closed()
+            return
+
+        username = login_line.decode().rstrip("\n")
+
+        if not username or any(ch.isspace() for ch in username):
+            writer.write(b"Invalid username\n\n")
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+            return
+
+        if username in clients:
+            writer.write(f"Username {username} is already taken\n\n".encode())
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+            return
+
+        client = ClientState(username, reader, writer)
+        clients[username] = client
+
+        writer.write(f"Successfully logged in as {username}\n\n".encode())
+        await writer.drain()
+
+        sender = asyncio.create_task(writer_task(client))
+
+        broadcast(f"{username} entered the MUD")
 
         while True:
-            conn, addr = server.accept()
+            data = await reader.readline()
+            if not data:
+                break
 
-            with conn:
-                fin = conn.makefile("r", encoding="utf-8")
-                fout = conn.makefile("w", encoding="utf-8")
+            line = data.decode().rstrip("\n")
+            if not line:
+                continue
 
-                username = fin.readline().rstrip("\n")
-                if not username or any(ch.isspace() for ch in username):
-                    send_block(fout, ["Invalid username"])
-                    continue
+            process_command(client, line)
 
-                send_block(fout, [f"Successfully logged in as {username}"])
+    finally:
+        if client is not None and clients.get(client.name) is client:
+            del clients[client.name]
+            broadcast(f"{client.name} left the MUD")
 
-                for line in fin:
-                    line = line.rstrip("\n")
-                    if not line:
-                        continue
+        if sender is not None:
+            sender.cancel()
+            try:
+                await sender
+            except asyncio.CancelledError:
+                pass
 
-                    reply = handle_command(game, line)
-                    send_block(fout, reply)
+        writer.close()
+        await writer.wait_closed()
+
+
+async def main():
+    server = await asyncio.start_server(handle_client, HOST, PORT)
+
+    async with server:
+        await server.serve_forever()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
