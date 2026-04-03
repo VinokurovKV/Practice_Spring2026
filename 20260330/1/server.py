@@ -1,16 +1,38 @@
 import asyncio
 import shlex
 import datetime
+import cowsay
+import io
 
 W = 10
 H = 10
 HOST = "127.0.0.1"
 PORT = 1337
 
+CUSTOM_MONSTERS = ["jgsbat"]
+
+jgsbat = cowsay.read_dot_cow(io.StringIO(r"""
+    ,_                    _,
+    ) '-._  ,_    _,  _.-' (
+    )  _.-'.|\\--//|.'-._  (
+     )'   .'\/o\/o\/'.   `(
+      ) .' . \====/ . '. (
+       )  / <<    >> \  (
+        '-._/``  ``\_.-'
+  jgs     \\'--'//
+         (((""  "")))
+"""))
+
 
 def log(msg):
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}")
+
+
+def make_monster_message(name, hello):
+    if name == "jgsbat":
+        return cowsay.cowsay(hello, cowfile=jgsbat)
+    return cowsay.cowsay(hello, cow=name)
 
 
 class Client:
@@ -49,17 +71,11 @@ def move(client, dx, dy):
     client.x = (client.x + dx) % W
     client.y = (client.y + dy) % H
 
-    result = [f"{client.name} moved to ({client.x}, {client.y})"]
+    result = [f"Moved to ({client.x}, {client.y})"]
 
     monster = monsters.get((client.x, client.y))
     if monster:
-        # индивидуальное сообщение
-        asyncio.create_task(
-            send_to(
-                client,
-                f"encounter {monster['name']} {monster['hello']}",
-            )
-        )
+        result.append(make_monster_message(monster["name"], monster["hello"]))
 
     return result
 
@@ -75,10 +91,11 @@ def addmon(client, name, hello, hp, mx, my):
 
     msg = f"{client.name} added monster {name} to ({mx}, {my}) saying {hello} with {hp} hp"
 
+    result = [msg]
     if replaced:
-        msg += " (replaced old monster)"
+        result.append("Replaced the old monster")
 
-    return [msg]
+    return result
 
 
 def attack(client, monster_name, damage, weapon):
@@ -86,11 +103,11 @@ def attack(client, monster_name, damage, weapon):
 
     if monster is None:
         if monster_name == "*":
-            return [f"{client.name}: No monster here"]
-        return [f"{client.name}: No {monster_name} here"]
+            return False, ["No monster here"]
+        return False, [f"No {monster_name} here"]
 
     if monster_name != "*" and monster["name"] != monster_name:
-        return [f"{client.name}: No {monster_name} here"]
+        return False, [f"No {monster_name} here"]
 
     actual_damage = min(damage, monster["hp"])
     monster["hp"] -= actual_damage
@@ -108,13 +125,13 @@ def attack(client, monster_name, damage, weapon):
     else:
         result.append(f"{name} now has {hp_left}")
 
-    return result
+    return True, result
 
 
 def process_command(client, line):
     parts = shlex.split(line)
     if not parts:
-        return []
+        return "personal", []
 
     cmd = parts[0]
 
@@ -122,7 +139,7 @@ def process_command(client, line):
         if cmd == "move":
             dx = int(parts[1])
             dy = int(parts[2])
-            return move(client, dx, dy)
+            return "personal", move(client, dx, dy)
 
         if cmd == "addmon":
             name = parts[1]
@@ -130,25 +147,29 @@ def process_command(client, line):
             hp = int(parts[3])
             mx = int(parts[4])
             my = int(parts[5])
-            return addmon(client, name, hello, hp, mx, my)
+            return "broadcast", addmon(client, name, hello, hp, mx, my)
 
         if cmd == "attack":
             monster_name = parts[1]
             damage = int(parts[2])
             weapon = parts[3]
-            return attack(client, monster_name, damage, weapon)
+            success, result = attack(client, monster_name, damage, weapon)
+            if success:
+                return "broadcast", result
+            return "personal", result
+
+        if cmd == "sayall":
+            if len(parts) != 2:
+                return "personal", ["Invalid arguments"]
+            return "broadcast", [f"{client.name}: {parts[1]}"]
 
     except (IndexError, ValueError):
-        return [f"{client.name}: Invalid arguments"]
+        return "personal", ["Invalid arguments"]
 
-    return [f"{client.name}: Unknown command"]
-
+    return "personal", ["Unknown command"]
 
 async def handle_client(reader, writer):
-    global clients
-
     try:
-        # получаем имя
         data = await reader.readline()
         if not data:
             writer.close()
@@ -156,6 +177,13 @@ async def handle_client(reader, writer):
             return
 
         username = data.decode().strip()
+
+        if not username or any(ch.isspace() for ch in username):
+            writer.write(b"Invalid username\n\n")
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+            return
 
         if username in clients:
             writer.write(f"Username {username} is already taken\n\n".encode())
@@ -183,20 +211,24 @@ async def handle_client(reader, writer):
 
             log(f"{username} -> {line}")
 
-            reply = process_command(client, line)
+            mode, reply = process_command(client, line)
 
-            if reply:
+            if not reply:
+                continue
+
+            if mode == "broadcast":
                 await broadcast(reply)
+            else:
+                await send_to(client, reply)
 
     except ConnectionResetError:
-        log(f"{username} connection reset")
+        if "username" in locals():
+            log(f"{username} connection reset")
 
     finally:
-        if 'username' in locals() and username in clients:
+        if "username" in locals() and username in clients:
             del clients[username]
-
             log(f"{username} disconnected")
-
             await broadcast(f"{username} left the MUD")
 
         try:

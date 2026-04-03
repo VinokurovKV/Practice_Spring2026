@@ -275,6 +275,20 @@ class MUDClient(cmd.Cmd):
         )
         self.client.send(request)
 
+    def do_sayall(self, arg):
+        try:
+            parts = shlex.split(arg)
+        except ValueError:
+            print("Invalid arguments")
+            return
+
+        if len(parts) != 1:
+            print("Invalid arguments")
+            return
+
+        message = parts[0]
+        self.client.send("sayall {}".format(shlex.quote(message)))
+
     def complete_attack(self, text, line, begidx, endidx):
         parts = shlex.split(line[:begidx])
 
