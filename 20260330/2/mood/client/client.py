@@ -1,39 +1,20 @@
+"""MOOD client logic."""
+
 import cmd
-import cowsay
+import readline
 import shlex
 import socket
-import io
 import sys
 import threading
-import readline
 
-W = 10
-H = 10
-HOST = "127.0.0.1"
-PORT = 1337
-
-CUSTOM_MONSTERS = ["jgsbat"]
-WEAPONS = {
-    "sword": 10,
-    "spear": 15,
-    "axe": 20,
-}
-
-jgsbat = cowsay.read_dot_cow(io.StringIO(r"""
-    ,_                    _,
-    ) '-._  ,_    _,  _.-' (
-    )  _.-'.|\\--//|.'-._  (
-     )'   .'\/o\/o\/'.   `(
-      ) .' . \====/ . '. (
-       )  / <<    >> \  (
-        '-._/``  ``\_.-'
-  jgs     \\'--'//
-         (((""  "")))
-"""))
-
-
-def available_monsters():
-    return cowsay.list_cows() + CUSTOM_MONSTERS
+from ..common import (
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    GRID_HEIGHT,
+    GRID_WIDTH,
+    WEAPONS,
+    available_monsters,
+)
 
 
 def parse_addmon_args(arg):
@@ -105,6 +86,22 @@ def parse_attack_args(arg):
     return "INVALID"
 
 
+def get_current_input():
+    """Get the current input."""
+    return readline.get_line_buffer()
+
+
+def redraw_prompt(cmdline, message):
+    """Show a message and redraw the prompt."""
+    current_input = get_current_input()
+    clear_width = len(cmdline.prompt) + len(current_input)
+    print(
+        f"\r{' ' * clear_width}\r{message}\n{cmdline.prompt}{current_input}",
+        end="",
+        flush=True,
+    )
+
+
 class Client:
     def __init__(self, host, port, username):
         self.sock = socket.create_connection((host, port))
@@ -166,11 +163,7 @@ def receiver(cmdline):
             break
 
         if message:
-            print(
-                f"\n{message}\n{cmdline.prompt}{readline.get_line_buffer()}",
-                end="",
-                flush=True,
-            )
+            redraw_prompt(cmdline, message)
 
     cmdline.alive = False
 
@@ -179,9 +172,9 @@ class MUDClient(cmd.Cmd):
     intro = "<<< Welcome to Python-MUD 0.1 >>>"
     prompt = "(mud) "
 
-    def __init__(self, username):
+    def __init__(self, username, host=DEFAULT_HOST, port=DEFAULT_PORT):
         super().__init__()
-        self.client = Client(HOST, PORT, username)
+        self.client = Client(host, port, username)
         self.alive = True
 
         login_reply = self.client.read_block()
@@ -238,7 +231,7 @@ class MUDClient(cmd.Cmd):
 
         name, hello, hp, mx, my = parsed
 
-        if not (0 <= mx < W and 0 <= my < H):
+        if not (0 <= mx < GRID_WIDTH and 0 <= my < GRID_HEIGHT):
             print("Invalid arguments")
             return
 
@@ -321,16 +314,26 @@ class MUDClient(cmd.Cmd):
         return True
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python client.py <username> [host] [port]")
+def main(argv=None):
+    """Start the client."""
+    if argv is None:
+        argv = sys.argv[1:]
+
+    if len(argv) < 1:
+        print("Usage: python -m mood.client <username> [host] [port]")
         raise SystemExit(1)
 
-    username = sys.argv[1]
+    username = argv[0]
+    host = DEFAULT_HOST
+    port = DEFAULT_PORT
 
-    if len(sys.argv) >= 3:
-        HOST = sys.argv[2]
-    if len(sys.argv) >= 4:
-        PORT = int(sys.argv[3])
+    if len(argv) >= 2:
+        host = argv[1]
+    if len(argv) >= 3:
+        port = int(argv[2])
 
-    MUDClient(username).cmdloop()
+    MUDClient(username, host, port).cmdloop()
+
+
+if __name__ == "__main__":
+    main()

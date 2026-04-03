@@ -1,40 +1,17 @@
+"""MOOD server logic."""
+
 import asyncio
-import shlex
 import datetime
-import cowsay
-import io
+import shlex
+import sys
 
-W = 10
-H = 10
-HOST = "127.0.0.1"
-PORT = 1337
-
-CUSTOM_MONSTERS = ["jgsbat"]
-
-jgsbat = cowsay.read_dot_cow(io.StringIO(r"""
-    ,_                    _,
-    ) '-._  ,_    _,  _.-' (
-    )  _.-'.|\\--//|.'-._  (
-     )'   .'\/o\/o\/'.   `(
-      ) .' . \====/ . '. (
-       )  / <<    >> \  (
-        '-._/``  ``\_.-'
-  jgs     \\'--'//
-         (((""  "")))
-"""))
+from ..common import DEFAULT_HOST, DEFAULT_PORT, GRID_HEIGHT, GRID_WIDTH
+from ..common import make_monster_message
 
 
 def log(msg):
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}")
-
-
-def make_monster_message(name, hello):
-    if name == "jgsbat":
-        return cowsay.cowsay(hello, cowfile=jgsbat)
-    return cowsay.cowsay(hello, cow=name)
-
-
 class Client:
     def __init__(self, name, reader, writer):
         self.name = name
@@ -68,8 +45,8 @@ async def broadcast(message):
 
 
 def move(client, dx, dy):
-    client.x = (client.x + dx) % W
-    client.y = (client.y + dy) % H
+    client.x = (client.x + dx) % GRID_WIDTH
+    client.y = (client.y + dy) % GRID_HEIGHT
 
     result = [f"Moved to ({client.x}, {client.y})"]
 
@@ -238,10 +215,11 @@ async def handle_client(reader, writer):
             pass
 
 
-async def main():
-    server = await asyncio.start_server(handle_client, HOST, PORT)
+async def run_server(host=DEFAULT_HOST, port=DEFAULT_PORT):
+    """Start the server."""
+    server = await asyncio.start_server(handle_client, host, port)
 
-    log(f"Server started on {HOST}:{PORT}")
+    log(f"Server started on {host}:{port}")
 
     async with server:
         try:
@@ -262,5 +240,21 @@ async def main():
             log("Server stopped")
 
 
+def main(argv=None):
+    """Run the server."""
+    if argv is None:
+        argv = sys.argv[1:]
+
+    host = DEFAULT_HOST
+    port = DEFAULT_PORT
+
+    if len(argv) >= 1:
+        host = argv[0]
+    if len(argv) >= 2:
+        port = int(argv[1])
+
+    asyncio.run(run_server(host, port))
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
