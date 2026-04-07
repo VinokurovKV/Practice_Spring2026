@@ -2,6 +2,7 @@
 
 import asyncio
 import datetime
+import random
 import shlex
 import sys
 
@@ -12,6 +13,8 @@ from ..common import make_monster_message
 def log(msg):
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}")
+
+
 class Client:
     def __init__(self, name, reader, writer):
         self.name = name
@@ -23,6 +26,13 @@ class Client:
 
 clients = {}
 monsters = {}
+
+DIRECTIONS = {
+    "right": (1, 0),
+    "left": (-1, 0),
+    "down": (0, 1),
+    "up": (0, -1),
+}
 
 
 async def send_to(client, message):
@@ -44,16 +54,23 @@ async def broadcast(message):
         await send_to(c, message)
 
 
+def encounter_messages(x, y):
+    monster = monsters.get((x, y))
+    if monster:
+        return [make_monster_message(monster["name"], monster["hello"])]
+    return []
+
+
+def clients_at(x, y):
+    return [client for client in clients.values() if client.x == x and client.y == y]
+
+
 def move(client, dx, dy):
     client.x = (client.x + dx) % GRID_WIDTH
     client.y = (client.y + dy) % GRID_HEIGHT
 
     result = [f"Moved to ({client.x}, {client.y})"]
-
-    monster = monsters.get((client.x, client.y))
-    if monster:
-        result.append(make_monster_message(monster["name"], monster["hello"]))
-
+    result.extend(encounter_messages(client.x, client.y))
     return result
 
 
@@ -105,6 +122,47 @@ def attack(client, monster_name, damage, weapon):
     return True, result
 
 
+def move_random_monster():
+    if not monsters:
+        return None
+
+    if len(monsters) >= GRID_WIDTH * GRID_HEIGHT:
+        return None
+
+    while True:
+        old_pos = random.choice(list(monsters.keys()))
+        monster = monsters[old_pos]
+
+        direction = random.choice(list(DIRECTIONS.keys()))
+        dx, dy = DIRECTIONS[direction]
+
+        new_x = (old_pos[0] + dx) % GRID_WIDTH
+        new_y = (old_pos[1] + dy) % GRID_HEIGHT
+        new_pos = (new_x, new_y)
+
+        if new_pos in monsters:
+            continue
+
+        del monsters[old_pos]
+        monsters[new_pos] = monster
+        return monster["name"], direction, new_x, new_y
+
+
+async def wandering_monsters_loop():
+    while True:
+        await asyncio.sleep(30)
+
+        moved = move_random_monster()
+        if moved is None:
+            continue
+
+        monster_name, direction, x, y = moved
+        await broadcast(f"{monster_name} moved one cell {direction}")
+
+        for client in clients_at(x, y):
+            await send_to(client, encounter_messages(x, y))
+
+
 def process_command(client, line):
     parts = shlex.split(line)
     if not parts:
@@ -144,6 +202,7 @@ def process_command(client, line):
         return "personal", ["Invalid arguments"]
 
     return "personal", ["Unknown command"]
+
 
 async def handle_client(reader, writer):
     try:
@@ -218,6 +277,7 @@ async def handle_client(reader, writer):
 async def run_server(host=DEFAULT_HOST, port=DEFAULT_PORT):
     """Start the server."""
     server = await asyncio.start_server(handle_client, host, port)
+    monster_task = asyncio.create_task(wandering_monsters_loop())
 
     log(f"Server started on {host}:{port}")
 
@@ -226,6 +286,12 @@ async def run_server(host=DEFAULT_HOST, port=DEFAULT_PORT):
             await server.serve_forever()
         except KeyboardInterrupt:
             log("Shutting down server...")
+
+            monster_task.cancel()
+            try:
+                await monster_task
+            except asyncio.CancelledError:
+                pass
 
             for client in list(clients.values()):
                 try:
