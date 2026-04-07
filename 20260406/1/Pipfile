@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 python-cowsay = "*"
 pyreadline3 = "*"
+sphinx = "*"
 
 [dev-packages]
 
