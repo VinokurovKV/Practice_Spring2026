@@ -11,12 +11,16 @@ from ..common import make_monster_message
 
 
 def log(msg):
+    """Print a log message with timestamp."""
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}")
 
 
 class Client:
+    """Connected player."""
+
     def __init__(self, name, reader, writer):
+        """Create client session."""
         self.name = name
         self.reader = reader
         self.writer = writer
@@ -36,6 +40,7 @@ DIRECTIONS = {
 
 
 async def send_to(client, message):
+    """Send message to one client."""
     try:
         if isinstance(message, list):
             for line in message:
@@ -50,11 +55,13 @@ async def send_to(client, message):
 
 
 async def broadcast(message):
+    """Send message to all clients."""
     for c in list(clients.values()):
         await send_to(c, message)
 
 
 def encounter_messages(x, y):
+    """Return monster message at cell."""
     monster = monsters.get((x, y))
     if monster:
         return [make_monster_message(monster["name"], monster["hello"])]
@@ -62,10 +69,12 @@ def encounter_messages(x, y):
 
 
 def clients_at(x, y):
+    """Return clients at cell."""
     return [client for client in clients.values() if client.x == x and client.y == y]
 
 
 def move(client, dx, dy):
+    """Move client on field."""
     client.x = (client.x + dx) % GRID_WIDTH
     client.y = (client.y + dy) % GRID_HEIGHT
 
@@ -75,6 +84,7 @@ def move(client, dx, dy):
 
 
 def addmon(client, name, hello, hp, mx, my):
+    """Add or replace monster."""
     replaced = (mx, my) in monsters
 
     monsters[(mx, my)] = {
@@ -93,6 +103,7 @@ def addmon(client, name, hello, hp, mx, my):
 
 
 def attack(client, monster_name, damage, weapon):
+    """Attack monster in current cell."""
     monster = monsters.get((client.x, client.y))
 
     if monster is None:
@@ -123,6 +134,7 @@ def attack(client, monster_name, damage, weapon):
 
 
 def move_random_monster():
+    """Move random monster to free cell."""
     if not monsters:
         return None
 
@@ -149,6 +161,7 @@ def move_random_monster():
 
 
 async def wandering_monsters_loop():
+    """Move monsters every 30 seconds."""
     while True:
         await asyncio.sleep(30)
 
@@ -164,6 +177,7 @@ async def wandering_monsters_loop():
 
 
 def process_command(client, line):
+    """Handle one command."""
     parts = shlex.split(line)
     if not parts:
         return "personal", []
@@ -205,6 +219,7 @@ def process_command(client, line):
 
 
 async def handle_client(reader, writer):
+    """Serve one client connection."""
     try:
         data = await reader.readline()
         if not data:
@@ -275,7 +290,7 @@ async def handle_client(reader, writer):
 
 
 async def run_server(host=DEFAULT_HOST, port=DEFAULT_PORT):
-    """Start the server."""
+    """Start server."""
     server = await asyncio.start_server(handle_client, host, port)
     monster_task = asyncio.create_task(wandering_monsters_loop())
 
@@ -307,7 +322,7 @@ async def run_server(host=DEFAULT_HOST, port=DEFAULT_PORT):
 
 
 def main(argv=None):
-    """Run the server."""
+    """Run server."""
     if argv is None:
         argv = sys.argv[1:]
 
