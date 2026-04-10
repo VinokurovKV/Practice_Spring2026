@@ -6,6 +6,7 @@ import shlex
 import socket
 import sys
 import threading
+import time
 
 from ..common import (
     DEFAULT_HOST,
@@ -86,6 +87,40 @@ def parse_attack_args(arg):
     return "INVALID"
 
 
+def parse_client_args(argv):
+    """Parse command line arguments."""
+    script_file = None
+    positional = []
+
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--file":
+            if script_file is not None or i + 1 >= len(argv):
+                return None
+            script_file = argv[i + 1]
+            i += 2
+        else:
+            positional.append(argv[i])
+            i += 1
+
+    if len(positional) < 1 or len(positional) > 3:
+        return None
+
+    username = positional[0]
+    host = DEFAULT_HOST
+    port = DEFAULT_PORT
+
+    if len(positional) >= 2:
+        host = positional[1]
+    if len(positional) >= 3:
+        try:
+            port = int(positional[2])
+        except ValueError:
+            return None
+
+    return username, host, port, script_file
+
+
 def get_current_input():
     """Get the current input."""
     return readline.get_line_buffer()
@@ -103,18 +138,27 @@ def redraw_prompt(cmdline, message):
 
 
 class Client:
-    def __init__(self, host, port, username):
+    def __init__(self, host, port, username, send_delay=0):
         self.sock = socket.create_connection((host, port))
         self.fin = self.sock.makefile("r", encoding="utf-8")
         self.fout = self.sock.makefile("w", encoding="utf-8")
+        self.send_delay = send_delay
+        self.last_send_time = 0
 
         self.fout.write(username + "\n")
         self.fout.flush()
 
     def send(self, line):
         try:
+            if self.send_delay > 0:
+                now = time.monotonic()
+                wait_time = self.send_delay - (now - self.last_send_time)
+                if wait_time > 0:
+                    time.sleep(wait_time)
+
             self.fout.write(line + "\n")
             self.fout.flush()
+            self.last_send_time = time.monotonic()
         except OSError:
             pass
 
@@ -172,10 +216,18 @@ class MUDClient(cmd.Cmd):
     intro = "<<< Welcome to Python-MUD 0.1 >>>"
     prompt = "(mud) "
 
-    def __init__(self, username, host=DEFAULT_HOST, port=DEFAULT_PORT):
+    def __init__(
+        self,
+        username,
+        host=DEFAULT_HOST,
+        port=DEFAULT_PORT,
+        script_file=None,
+    ):
         super().__init__()
-        self.client = Client(host, port, username)
+        send_delay = 1 if script_file is not None else 0
+        self.client = Client(host, port, username, send_delay=send_delay)
         self.alive = True
+        self.script_file = script_file
 
         login_reply = self.client.read_block()
         if login_reply is None:
@@ -313,26 +365,48 @@ class MUDClient(cmd.Cmd):
 
         return True
 
+    def run_script(self):
+        """Run commands from a script file."""
+        try:
+            with open(self.script_file, encoding="utf-8") as script:
+                for raw_line in script:
+                    line = raw_line.strip()
+
+                    if not line or line.startswith("#"):
+                        continue
+
+                    stop = self.onecmd(line)
+                    if stop:
+                        break
+        except OSError as exc:
+            print(f"Cannot open script file: {exc}")
+            self.do_EOF("")
+            raise SystemExit(1)
+
+        time.sleep(1)
+        self.do_EOF("")
+
 
 def main(argv=None):
     """Start the client."""
     if argv is None:
         argv = sys.argv[1:]
 
-    if len(argv) < 1:
-        print("Usage: python -m mood.client <username> [host] [port]")
+    parsed = parse_client_args(argv)
+    if parsed is None:
+        print(
+            "Usage: python -m mood.client <username> [host] [port] "
+            "[--file script.mood]"
+        )
         raise SystemExit(1)
 
-    username = argv[0]
-    host = DEFAULT_HOST
-    port = DEFAULT_PORT
+    username, host, port, script_file = parsed
 
-    if len(argv) >= 2:
-        host = argv[1]
-    if len(argv) >= 3:
-        port = int(argv[2])
-
-    MUDClient(username, host, port).cmdloop()
+    client = MUDClient(username, host, port, script_file=script_file)
+    if script_file is not None:
+        client.run_script()
+    else:
+        client.cmdloop()
 
 
 if __name__ == "__main__":
