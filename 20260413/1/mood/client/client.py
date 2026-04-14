@@ -87,6 +87,13 @@ def parse_attack_args(arg):
     return "INVALID"
 
 
+def parse_movemonsters_args(arg):
+    parts = shlex.split(arg)
+    if len(parts) != 1 or parts[0] not in {"on", "off"}:
+        return None
+    return parts[0]
+
+
 def parse_client_args(argv):
     """Parse command line arguments."""
     script_file = None
@@ -334,6 +341,14 @@ class MUDClient(cmd.Cmd):
         message = parts[0]
         self.client.send("sayall {}".format(shlex.quote(message)))
 
+    def do_movemonsters(self, arg):
+        mode = parse_movemonsters_args(arg)
+        if mode is None:
+            print("Invalid arguments")
+            return
+
+        self.client.send(f"movemonsters {mode}")
+
     def complete_attack(self, text, line, begidx, endidx):
         parts = shlex.split(line[:begidx])
 
@@ -351,6 +366,14 @@ class MUDClient(cmd.Cmd):
 
         if len(parts) == 3 and parts[0] == "attack" and parts[2] == "with":
             return [w for w in WEAPONS if w.startswith(text)]
+
+        return []
+
+    def complete_movemonsters(self, text, line, begidx, endidx):
+        parts = shlex.split(line[:begidx])
+
+        if parts == ["movemonsters"]:
+            return [mode for mode in ("on", "off") if mode.startswith(text)]
 
         return []
 

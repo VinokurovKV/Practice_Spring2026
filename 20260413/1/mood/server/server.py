@@ -30,6 +30,7 @@ class Client:
 
 clients = {}
 monsters = {}
+moving_monsters_enabled = True
 
 DIRECTIONS = {
     "right": (1, 0),
@@ -133,6 +134,15 @@ def attack(client, monster_name, damage, weapon):
     return True, result
 
 
+def set_moving_monsters(enabled):
+    """Enable or disable wandering monsters mode."""
+    global moving_monsters_enabled
+
+    moving_monsters_enabled = enabled
+    state = "on" if enabled else "off"
+    return [f"Moving monsters: {state}"]
+
+
 def move_random_monster():
     """Move random monster to free cell."""
     if not monsters:
@@ -164,6 +174,9 @@ async def wandering_monsters_loop():
     """Move monsters every 30 seconds."""
     while True:
         await asyncio.sleep(30)
+
+        if not moving_monsters_enabled:
+            continue
 
         moved = move_random_monster()
         if moved is None:
@@ -211,6 +224,11 @@ def process_command(client, line):
             if len(parts) != 2:
                 return "personal", ["Invalid arguments"]
             return "broadcast", [f"{client.name}: {parts[1]}"]
+
+        if cmd == "movemonsters":
+            if len(parts) != 2 or parts[1] not in {"on", "off"}:
+                return "personal", ["Invalid arguments"]
+            return "personal", set_moving_monsters(parts[1] == "on")
 
     except (IndexError, ValueError):
         return "personal", ["Invalid arguments"]
