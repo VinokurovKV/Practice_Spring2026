@@ -94,6 +94,13 @@ def parse_movemonsters_args(arg):
     return parts[0]
 
 
+def parse_locale_args(arg):
+    parts = shlex.split(arg)
+    if len(parts) != 1:
+        return None
+    return parts[0]
+
+
 def parse_client_args(argv):
     """Parse command line arguments."""
     script_file = None
@@ -349,6 +356,14 @@ class MUDClient(cmd.Cmd):
 
         self.client.send(f"movemonsters {mode}")
 
+    def do_locale(self, arg):
+        locale_name = parse_locale_args(arg)
+        if locale_name is None:
+            print("Invalid arguments")
+            return
+
+        self.client.send("locale {}".format(shlex.quote(locale_name)))
+
     def complete_attack(self, text, line, begidx, endidx):
         parts = shlex.split(line[:begidx])
 
@@ -376,6 +391,10 @@ class MUDClient(cmd.Cmd):
             return [mode for mode in ("on", "off") if mode.startswith(text)]
 
         return []
+
+    def complete_locale(self, text, line, begidx, endidx):
+        options = ["ru_RU.UTF8"]
+        return [opt for opt in options if opt.startswith(text)]
 
     def do_EOF(self, arg):
         print()

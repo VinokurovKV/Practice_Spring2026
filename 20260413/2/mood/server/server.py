@@ -2,9 +2,11 @@
 
 import asyncio
 import datetime
+import gettext
 import random
 import shlex
 import sys
+from pathlib import Path
 
 from ..common import DEFAULT_HOST, DEFAULT_PORT, GRID_HEIGHT, GRID_WIDTH
 from ..common import make_monster_message
@@ -26,6 +28,7 @@ class Client:
         self.writer = writer
         self.x = 0
         self.y = 0
+        self.locale = None
 
 
 clients = {}
@@ -38,6 +41,42 @@ DIRECTIONS = {
     "down": (0, 1),
     "up": (0, -1),
 }
+
+LOCALES_DIR = Path(__file__).resolve().parent / "po"
+TEXTDOMAIN = "messages"
+
+
+def get_translation(locale_name):
+    """Return translation object for locale."""
+    if locale_name not in {"ru_RU.UTF8", "ru_RU.UTF-8"}:
+        return gettext.NullTranslations()
+
+    return gettext.translation(
+        TEXTDOMAIN,
+        localedir=str(LOCALES_DIR),
+        languages=["ru_RU.UTF8", "ru_RU.UTF-8", "ru_RU", "ru"],
+        fallback=True,
+    )
+
+
+def tr(client, message):
+    """Translate singular message for client."""
+    return get_translation(client.locale).gettext(message)
+
+
+def ntr(client, singular, plural, number):
+    """Translate plural message for client."""
+    return get_translation(client.locale).ngettext(singular, plural, number)
+
+
+def hp_text(client, hp):
+    """Return localized hp text."""
+    return ntr(
+        client,
+        "{n} hit point",
+        "{n} hit points",
+        hp,
+    ).format(n=hp)
 
 
 async def send_to(client, message):
@@ -59,6 +98,66 @@ async def broadcast(message):
     """Send message to all clients."""
     for c in list(clients.values()):
         await send_to(c, message)
+
+
+def render_addmon_event(client, event):
+    """Render localized addmon event."""
+    result = [
+        tr(
+            client,
+            '{player} added monster {monster} to ({x}, {y}) saying "{hello}" with {hp}',
+        ).format(
+            player=event["player"],
+            monster=event["monster"],
+            x=event["x"],
+            y=event["y"],
+            hello=event["hello"],
+            hp=hp_text(client, event["hp"]),
+        )
+    ]
+
+    if event["replaced"]:
+        result.append(tr(client, "Replaced the old monster"))
+
+    return result
+
+
+def render_attack_event(client, event):
+    """Render localized attack event."""
+    result = [
+        tr(
+            client,
+            "{player} attacked {monster} with {weapon}, damage {hp}",
+        ).format(
+            player=event["player"],
+            monster=event["monster"],
+            weapon=event["weapon"],
+            hp=hp_text(client, event["damage"]),
+        )
+    ]
+
+    if event["died"]:
+        result.append(
+            tr(client, "{monster} died").format(monster=event["monster"])
+        )
+    else:
+        result.append(
+            tr(client, "{monster} now has {hp}").format(
+                monster=event["monster"],
+                hp=hp_text(client, event["hp_left"]),
+            )
+        )
+
+    return result
+
+
+async def broadcast_event(event):
+    """Send localized event to all clients."""
+    for c in list(clients.values()):
+        if event["type"] == "addmon":
+            await send_to(c, render_addmon_event(c, event))
+        elif event["type"] == "attack":
+            await send_to(c, render_attack_event(c, event))
 
 
 def encounter_messages(x, y):
@@ -94,13 +193,16 @@ def addmon(client, name, hello, hp, mx, my):
         "hp": hp,
     }
 
-    msg = f"{client.name} added monster {name} to ({mx}, {my}) saying {hello} with {hp} hp"
-
-    result = [msg]
-    if replaced:
-        result.append("Replaced the old monster")
-
-    return result
+    return {
+        "type": "addmon",
+        "player": client.name,
+        "monster": name,
+        "x": mx,
+        "y": my,
+        "hello": hello,
+        "hp": hp,
+        "replaced": replaced,
+    }
 
 
 def attack(client, monster_name, damage, weapon):
@@ -121,17 +223,27 @@ def attack(client, monster_name, damage, weapon):
     name = monster["name"]
     hp_left = monster["hp"]
 
-    result = [
-        f"{client.name} attacked {name} with {weapon}, damage {actual_damage} hp"
-    ]
-
     if hp_left == 0:
         del monsters[(client.x, client.y)]
-        result.append(f"{name} died")
-    else:
-        result.append(f"{name} now has {hp_left}")
+        return True, {
+            "type": "attack",
+            "player": client.name,
+            "monster": name,
+            "weapon": weapon,
+            "damage": actual_damage,
+            "hp_left": 0,
+            "died": True,
+        }
 
-    return True, result
+    return True, {
+        "type": "attack",
+        "player": client.name,
+        "monster": name,
+        "weapon": weapon,
+        "damage": actual_damage,
+        "hp_left": hp_left,
+        "died": False,
+    }
 
 
 def set_moving_monsters(enabled):
@@ -230,6 +342,15 @@ def process_command(client, line):
                 return "personal", ["Invalid arguments"]
             return "personal", set_moving_monsters(parts[1] == "on")
 
+        if cmd == "locale":
+            if len(parts) != 2:
+                return "personal", ["Invalid arguments"]
+
+            client.locale = parts[1]
+            return "personal", [
+                tr(client, "Set up locale: {locale}").format(locale=parts[1])
+            ]
+
     except (IndexError, ValueError):
         return "personal", ["Invalid arguments"]
 
@@ -266,8 +387,16 @@ async def handle_client(reader, writer):
 
         log(f"{username} connected")
 
-        await send_to(client, f"Successfully logged in as {username}")
-        await broadcast(f"{username} entered the MUD")
+        await send_to(
+            client,
+            tr(client, "Successfully logged in as {name}").format(name=username),
+        )
+
+        for c in list(clients.values()):
+            await send_to(
+                c,
+                tr(c, "{name} entered the MUD").format(name=username),
+            )
 
         while True:
             line = await reader.readline()
@@ -286,7 +415,10 @@ async def handle_client(reader, writer):
                 continue
 
             if mode == "broadcast":
-                await broadcast(reply)
+                if isinstance(reply, dict):
+                    await broadcast_event(reply)
+                else:
+                    await broadcast(reply)
             else:
                 await send_to(client, reply)
 
@@ -298,7 +430,12 @@ async def handle_client(reader, writer):
         if "username" in locals() and username in clients:
             del clients[username]
             log(f"{username} disconnected")
-            await broadcast(f"{username} left the MUD")
+
+            for c in list(clients.values()):
+                await send_to(
+                    c,
+                    tr(c, "{name} left the MUD").format(name=username),
+                )
 
         try:
             writer.close()
