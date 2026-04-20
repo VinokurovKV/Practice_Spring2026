@@ -1,0 +1,6 @@
+sayall start
+addmon dragon hello hi hp 20 coords 1 1
+right
+down
+attack dragon with sword
+sayall done
