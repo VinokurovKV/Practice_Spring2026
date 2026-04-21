@@ -476,6 +476,17 @@ async def run_server(host=DEFAULT_HOST, port=DEFAULT_PORT):
             log("Server stopped")
 
 
+def start_server(host=DEFAULT_HOST, port=DEFAULT_PORT):
+    """Run server in a regular function for multiprocessing tests."""
+    global moving_monsters_enabled
+
+    clients.clear()
+    monsters.clear()
+    moving_monsters_enabled = True
+
+    asyncio.run(run_server(host, port))
+
+
 def main(argv=None):
     """Run server."""
     if argv is None:
@@ -489,7 +500,7 @@ def main(argv=None):
     if len(argv) >= 2:
         port = int(argv[1])
 
-    asyncio.run(run_server(host, port))
+    start_server(host, port)
 
 
 if __name__ == "__main__":
