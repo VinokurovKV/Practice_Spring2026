@@ -9,6 +9,7 @@ pyreadline3 = "*"
 sphinx = "*"
 flake8 = "*"
 pydocstyle = "*"
+doit = "*"
 
 [dev-packages]
 
