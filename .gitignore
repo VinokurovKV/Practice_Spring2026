@@ -1,2 +1,8 @@
 __pycache__/
 build/
+
+.doit.db
+
+**/mood/server/locale/
+**/mood/server/po/*.pot
+*.mo
