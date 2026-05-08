@@ -12,6 +12,11 @@ pydocstyle = "*"
 doit = "*"
 
 [dev-packages]
+doit = "*"
+sphinx = "*"
+build = "*"
+setuptools = "*"
+wheel = "*"
 
 [requires]
 python_version = "3.12"

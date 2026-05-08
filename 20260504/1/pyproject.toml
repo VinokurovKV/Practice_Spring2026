@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mood"
+version = "0.1.0"
+description = "MUD client and server"
+requires-python = ">=3.12"
+dependencies = [
+    "python-cowsay"
+]
+
+[project.scripts]
+mood-client = "mood.client.client:main"
+mood-server = "mood.server.server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mood*"]
+
+[tool.setuptools.package-data]
+"mood.common" = [
+    "cows/*.txt",
+]
+"mood.server" = [
+    "po/*/LC_MESSAGES/*.mo",
+]
+"mood.client" = [
+    "html/*.html",
+    "html/*.js",
+    "html/*.inv",
+    "html/_static/*",
+    "html/_sources/*",
+]
