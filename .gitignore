@@ -6,3 +6,7 @@ build/
 **/mood/server/locale/
 **/mood/server/po/*.pot
 *.mo
+
+dist/
+*.egg-info/
+mood/client/html/
