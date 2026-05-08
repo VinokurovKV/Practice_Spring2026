@@ -28,3 +28,4 @@ MOOD documentation
    :caption: Contents:
 
    server
+   client

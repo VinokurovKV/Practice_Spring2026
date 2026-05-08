@@ -3,38 +3,43 @@ import subprocess
 from pathlib import Path
 
 
-DOMAIN = "mud"
+DOMAIN = "messages"
 LOCALE = "ru_RU.UTF-8"
 
 PO_DIR = Path("mood/server/po")
 POT_FILE = PO_DIR / f"{DOMAIN}.pot"
 PO_FILE = PO_DIR / LOCALE / "LC_MESSAGES" / f"{DOMAIN}.po"
+MO_FILE = PO_DIR / LOCALE / "LC_MESSAGES" / f"{DOMAIN}.mo"
 
-LOCALE_DIR = Path("mood/server/locale")
-MO_FILE = LOCALE_DIR / LOCALE / "LC_MESSAGES" / f"{DOMAIN}.mo"
-
-DOC_DIR = Path("html")
+SPHINX_SOURCE_DIR = Path("doc/source")
+SPHINX_BUILD_DIR = Path("doc/build/html")
+CLIENT_DOC_DIR = Path("mood/client/html")
 
 PY_FILES = [
     "mood/client/client.py",
     "mood/server/server.py",
 ]
 
-PY_MODULES = [
-    "mood.client.client",
-    "mood.server.server",
+SPHINX_FILES = [
+    "doc/source/conf.py",
+    "doc/source/index.rst",
+    "doc/source/client.rst",
+    "doc/source/server.rst",
 ]
 
 
 def remove_all_generated_files():
-    if DOC_DIR.exists():
-        shutil.rmtree(DOC_DIR)
+    if SPHINX_BUILD_DIR.parent.exists():
+        shutil.rmtree(SPHINX_BUILD_DIR.parent)
+
+    if CLIENT_DOC_DIR.exists():
+        shutil.rmtree(CLIENT_DOC_DIR)
 
     if POT_FILE.exists():
         POT_FILE.unlink()
 
-    if LOCALE_DIR.exists():
-        shutil.rmtree(LOCALE_DIR)
+    if MO_FILE.exists():
+        MO_FILE.unlink()
 
 
 def task_pot():
@@ -42,7 +47,12 @@ def task_pot():
     return {
         "actions": [
             f"mkdir -p {PO_DIR}",
-            f"xgettext --force-po -L Python -o {POT_FILE} {' '.join(PY_FILES)}",
+            (
+                f"xgettext --force-po -L Python "
+                f"--keyword=tr:2 "
+                f"--keyword=ntr:2,3 "
+                f"-o {POT_FILE} {' '.join(PY_FILES)}"
+            ),
         ],
         "file_dep": PY_FILES,
         "targets": [POT_FILE],
@@ -81,12 +91,8 @@ def task_po():
 
 def task_mo():
     """Make .mo file."""
-    def make_mo_dir():
-        MO_FILE.parent.mkdir(parents=True, exist_ok=True)
-
     return {
         "actions": [
-            make_mo_dir,
             f"msgfmt {PO_FILE} -o {MO_FILE}",
         ],
         "file_dep": [PO_FILE],
@@ -108,12 +114,18 @@ def task_html():
     """Make html docs."""
     return {
         "actions": [
-            f"mkdir -p {DOC_DIR}",
-            f"PYTHONPATH=. python3 -m pydoc -w {' '.join(PY_MODULES)}",
-            "mv *.html html/ || true",
+            (
+                f"PYTHONPATH=. sphinx-build -b html "
+                f"{SPHINX_SOURCE_DIR} {SPHINX_BUILD_DIR}"
+            ),
+            f"mkdir -p {CLIENT_DOC_DIR}",
+            f"cp -r {SPHINX_BUILD_DIR}/* {CLIENT_DOC_DIR}/",
         ],
-        "file_dep": PY_FILES,
-        "targets": [DOC_DIR],
+        "file_dep": PY_FILES + SPHINX_FILES,
+        "targets": [
+            SPHINX_BUILD_DIR / "index.html",
+            CLIENT_DOC_DIR / "index.html",
+        ],
         "clean": [remove_all_generated_files],
     }
 

@@ -7,6 +7,9 @@ import socket
 import sys
 import threading
 import time
+import webbrowser
+from importlib.resources import files
+import os
 
 from ..common import (
     DEFAULT_HOST,
@@ -226,6 +229,23 @@ def receiver(cmdline):
     cmdline.alive = False
 
 
+def open_url_silently(url):
+    """Open URL without browser messages in terminal."""
+    with open(os.devnull, "w", encoding="utf-8") as devnull:
+        old_stdout = os.dup(1)
+        old_stderr = os.dup(2)
+
+        try:
+            os.dup2(devnull.fileno(), 1)
+            os.dup2(devnull.fileno(), 2)
+            webbrowser.open(url)
+        finally:
+            os.dup2(old_stdout, 1)
+            os.dup2(old_stderr, 2)
+            os.close(old_stdout)
+            os.close(old_stderr)
+
+
 class MUDClient(cmd.Cmd):
     intro = "<<< Welcome to Python-MUD 0.1 >>>"
     prompt = "(mud) "
@@ -264,6 +284,15 @@ class MUDClient(cmd.Cmd):
 
     def default(self, line):
         print("Invalid command")
+
+    def do_documentation(self, arg):
+        """Open documentation."""
+        if arg:
+            print("Invalid arguments")
+            return
+
+        doc_path = files("mood.client").joinpath("html/index.html")
+        open_url_silently(doc_path.as_uri())
 
     def do_up(self, arg):
         if arg:
